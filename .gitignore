@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Env & secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Databases (local dev)
+*.db
+*.sqlite
+*.sqlite3
+
+# Node / Expo
+node_modules/
+.expo/
+.expo-shared/
+dist/
+web-build/
+*.tsbuildinfo
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Build artifacts
+*.log
+*.tmp
