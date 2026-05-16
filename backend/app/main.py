@@ -1,6 +1,9 @@
 from fastapi import FastAPI
 
-app = FastAPI(title="Cadence Brain", version="0.1.0")
+from app.routers import ingest
+
+app = FastAPI(title="Cadence Brain", version="0.2.0")
+app.include_router(ingest.router)
 
 
 @app.get("/health")

@@ -39,10 +39,20 @@ Close-Loops/
 │   │   ├── config.py
 │   │   ├── db.py
 │   │   ├── models.py
-│   │   └── main.py
+│   │   ├── schemas.py        # Pydantic v2 — LLM output + API I/O
+│   │   ├── main.py           # FastAPI app, mounts routers
+│   │   ├── routers/
+│   │   │   └── ingest.py     # POST /ingest
+│   │   └── services/
+│   │       ├── llm.py        # Anthropic wrapper (messages.parse + cached system prompt)
+│   │       ├── decomposition.py  # ingest pipeline orchestrator
+│   │       ├── cycles.py     # DAG cycle prevention
+│   │       ├── temporal.py   # est_minutes correction factor
+│   │       └── reschedule.py # Phase 3 stub
 │   ├── alembic/
 │   │   ├── env.py
 │   │   └── versions/0001_initial_schema.py
+│   ├── tests/                # 25 pytest cases (cycles, temporal, ingest pipeline, router)
 │   ├── alembic.ini
 │   ├── requirements.txt
 │   └── .env.example
@@ -56,8 +66,17 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env       # then fill ANTHROPIC_API_KEY, DATABASE_URL (optional)
 alembic upgrade head        # creates ./cadence.db (SQLite) if no DATABASE_URL set
+
+# Seed at least one cofounder so /ingest can resolve a default owner:
+python -c "from app.db import SessionLocal; from app.models import User; s=SessionLocal(); s.add_all([User(name='Michael', role='cofounder'), User(name='Chris', role='cofounder')]); s.commit()"
+
 uvicorn app.main:app --reload --port 8000
 curl http://localhost:8000/health
+curl -X POST http://localhost:8000/ingest -H 'Content-Type: application/json' \
+  -d '{"raw_goal":"Get the Q3 webinar live and follow up the warm leads"}'
+
+# Tests:
+PYTHONPATH=. pytest tests/
 ```
 
 ## Deviations from the spec (record as we go)
@@ -77,12 +96,29 @@ curl http://localhost:8000/health
   Run the bootstrap in Section 2.3 at the start of Phase 5.
 - **`frontend-design` skill not present** at `/mnt/skills/public/frontend-design/`. Find
   it (or install it) before any UI work — see the memory note `reference-frontend-design-skill`.
+- **LLM model + thinking knobs (Phase 2):** `claude-opus-4-7` with adaptive thinking and
+  `effort: "high"`. Configurable in [backend/app/services/llm.py](backend/app/services/llm.py).
+  Decomposition is intelligence-sensitive (ranking importance, estimating effort, mapping
+  deps); per the claude-api skill, Opus 4.7 + `high` is the right minimum. Drop to Sonnet
+  4.6 if cost becomes an issue at higher call volumes.
+- **`messages.parse()` over manual JSON parsing.** The Anthropic SDK validates Pydantic
+  schemas server-side — no need for the spec's "try/except, strip fences, re-prompt once"
+  loop. If a future schema violation happens, it surfaces as `pydantic.ValidationError`
+  bubbled up to the router and returned as a 502.
 
 ## Phase status
 - [x] Phase 0 — env setup
 - [x] Phase 1 — data schema (SQLAlchemy models + Alembic initial migration; verified
       on SQLite)
-- [ ] Phase 2 — LLM decomposition + estimation (`POST /ingest`)
+- [x] Phase 2 — LLM decomposition + estimation (`POST /ingest`):
+      `claude-opus-4-7` via `messages.parse()` with Pydantic-typed output (no JSON
+      string parsing). Adaptive thinking + `effort: "high"`. System prompt has
+      `cache_control: ephemeral` (caches once prefix exceeds ~4096 tokens on Opus 4.7;
+      currently ~2500 tokens — adding 1–2 more few-shots would cross the threshold).
+      Pipeline: cycle-safe DAG ingest → temporal correction (mean(actual/estimated)
+      clamped 0.5–3.0; falls back to 1.0 under 3 samples) → owner routing
+      (self/partner/contractor) → persistence → reschedule stub. 25 pytest cases pass.
+      Empty/missing `ANTHROPIC_API_KEY` returns a clean 503 with a useful message.
 - [ ] Phase 3 — scheduling engine (priority math + greedy packing + APScheduler loop)
 - [ ] Phase 4 — Google Calendar via MCP
 - [ ] Phase 5 — Now-screen vertical slice (bootstrap Expo here)
