@@ -7,8 +7,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.config import settings
 from app.db import Base
 from app import models  # noqa: F401 — register models on Base.metadata
+
+# Never let the background APScheduler fire during tests — would race with the
+# in-test session and cause flaky failures.
+settings.enable_scheduler_loop = False
 
 
 @pytest.fixture

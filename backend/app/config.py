@@ -19,5 +19,9 @@ class Settings(BaseSettings):
     sched_gamma: float = 0.5
     sched_delta: float = 0.7
 
+    # Scheduler loop — disable in tests via env var or in conftest.
+    enable_scheduler_loop: bool = True
+    scheduler_tick_seconds: int = 60
+
 
 settings = Settings()

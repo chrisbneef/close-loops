@@ -62,8 +62,15 @@ def pack(
     free_slots: list[FreeSlot],
     *,
     daily_capacity_minutes: int = 360,  # 6h focused work / day by default
+    existing_anchors: list[ScheduledBlock] | None = None,
 ) -> tuple[list[ScheduledBlock], list[int]]:
-    """Greedy DAG-aware packer. Returns (scheduled_blocks, unscheduled_task_ids)."""
+    """Greedy DAG-aware packer. Returns (scheduled_blocks, unscheduled_task_ids).
+
+    `existing_anchors` are pre-scheduled blocks NOT in `tasks` — typically
+    cross-owner dependencies whose end times we already know from
+    `calendar_blocks`. They satisfy dep checks but don't consume slots
+    (they live on someone else's calendar) and aren't returned in
+    `scheduled_blocks`."""
     immutable = [t for t in tasks if t.is_immutable and t.locked_start is not None]
     mutable = [t for t in tasks if not (t.is_immutable and t.locked_start is not None)]
 
@@ -72,6 +79,11 @@ def pack(
 
     scheduled: list[ScheduledBlock] = []
     minutes_used_per_day: dict[datetime.date, int] = {}
+
+    # Cross-owner anchors satisfy dependency lookups from the start.
+    cross_owner_lookup: dict[int, ScheduledBlock] = {
+        a.task_id: a for a in (existing_anchors or [])
+    }
 
     # 1. Anchor immutable tasks first; subtract them from the slot pool.
     for t in immutable:
@@ -97,6 +109,8 @@ def pack(
     #    priority and pack it. This way a higher-priority dependent doesn't
     #    "lose" its slot just because its prereqs weren't seen first.
     scheduled_by_id: dict[int, ScheduledBlock] = {b.task_id: b for b in scheduled}
+    # Seed with cross-owner anchors so dep lookups succeed.
+    scheduled_by_id.update(cross_owner_lookup)
     remaining: dict[int, TaskCandidate] = {t.task_id: t for t in mutable}
     # Pre-flag tasks whose dependencies aren't in the candidate set at all —
     # these can never become ready.

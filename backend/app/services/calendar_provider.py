@@ -46,21 +46,20 @@ class StubCalendarProvider:
         self,
         morning: tuple[time, time] = DEFAULT_MORNING,
         afternoon: tuple[time, time] = DEFAULT_AFTERNOON,
-        *,
-        clock: callable = None,  # injection point for tests
     ):
         self.morning = morning
         self.afternoon = afternoon
-        self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def free_slots(self, user_timezone: str, *, start: datetime, end: datetime) -> list[FreeSlot]:
+        """The caller is responsible for passing a `start` that's already
+        wall-clock-current (production passes `datetime.now(tz=utc)`); we don't
+        re-clip here so test sim-times work cleanly."""
         try:
             tz = zoneinfo.ZoneInfo(user_timezone or "UTC")
         except zoneinfo.ZoneInfoNotFoundError:
             tz = zoneinfo.ZoneInfo("UTC")
 
-        now = self._clock()
-        start = max(_as_utc(start), now)
+        start = _as_utc(start)
         end = _as_utc(end)
         if start >= end:
             return []

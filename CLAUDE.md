@@ -107,10 +107,14 @@ PYTHONPATH=. pytest tests/
   bubbled up to the router and returned as a 502.
 - **SQLite drops tzinfo on `DateTime(timezone=True)` reads** even though Pydantic /
   SQLAlchemy stored it correctly. Postgres reads preserve tz. Tests use a `_as_utc()`
-  helper that normalizes both. For Phase 3, the scheduler should normalize at read time
-  too (either via a SQLAlchemy `TypeDecorator` that always returns UTC-aware, or a
-  small `_as_utc()` shim at the boundary). Don't compare naive vs aware datetimes
-  directly — Python will raise `TypeError`.
+  helper that normalizes both. Phase 3 handles this at every boundary that reads
+  `CalendarBlock.start`/`.end` (priority.py, scheduler.py, persistence.py) — a
+  TypeDecorator would be cleaner; deferred until we actually run on Postgres in prod.
+  Don't compare naive vs aware datetimes directly — Python raises `TypeError`.
+- **Sync tick from `/ingest` is intentional.** The user expects new tasks to land on
+  the calendar in the same request, not 60s later. The synchronous tick adds maybe
+  100-300ms to /ingest latency for two cofounders; if it ever gets slow we can move to
+  background-thread or asyncio.create_task. Until then, the simplicity is worth it.
 
 ## Phase status
 - [x] Phase 0 — env setup
@@ -156,8 +160,31 @@ PYTHONPATH=. pytest tests/
       have no way to see Michael's schedule until we persist to `calendar_blocks`. In
       Phase 3b, after each scheduler tick writes to `calendar_blocks`, the next pass for
       a different owner can read those rows as fixed anchors.
-- [ ] Phase 3b — APScheduler tick + persistence to `calendar_blocks` + cross-owner
-      dep resolution + wire `/ingest` to trigger immediate re-pack
+- [x] Phase 3b — persistence + cross-owner deps + APScheduler loop:
+      [app/services/persistence.py](backend/app/services/persistence.py) diffs the
+      packer proposal against `calendar_blocks` (insert / update / delete; preserves
+      `locked=true` blocks the user pinned manually). Idempotent — a second call with
+      the same proposal is a no-op. [app/services/scheduler.py](backend/app/services/scheduler.py)
+      loads cross-owner anchors (other owners' persisted blocks for tasks this owner's
+      tasks depend on) so the packer can satisfy delegated-task deps. The packer's
+      `existing_anchors` param wraps those without consuming this owner's slots.
+      [app/services/scheduler_tick.py](backend/app/services/scheduler_tick.py) runs a
+      fixed-point multi-pass loop (up to 3 passes) — pass 1 packs owner A, pass 2 sees
+      A's newly-persisted blocks and unblocks owner B's delegated tasks. Aggregates
+      diff counts across passes so a real insert isn't masked by a no-op pass.
+      [app/services/scheduler_loop.py](backend/app/services/scheduler_loop.py) is the
+      APScheduler `BackgroundScheduler` (60s interval, configurable via
+      `SCHEDULER_TICK_SECONDS`), started by [app/main.py](backend/app/main.py)'s
+      FastAPI lifespan handler. [app/services/reschedule.py](backend/app/services/reschedule.py)
+      now runs a real synchronous tick from `/ingest` so a new goal's tasks land on
+      the calendar within the same request, not 60s later. `POST /admin/tick` exposes
+      a manual trigger for dev. 11 new tests (60 → 71). End-to-end demo: all 28 tasks
+      across both cofounders persist on the first tick, including all 6 of Chris's
+      delegated tasks correctly ordered after their cross-owner Michael prereqs.
+
+      **Test conftest disables `enable_scheduler_loop`** so pytest never races with a
+      background tick.
+- [ ] Phase 4 — Google Calendar via MCP (swap StubCalendarProvider for the real one)
 - [ ] Phase 4 — Google Calendar via MCP
 - [ ] Phase 5 — Now-screen vertical slice (bootstrap Expo here)
 - [ ] Phase 6 — reminders + gamification

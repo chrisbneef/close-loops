@@ -4,7 +4,9 @@ from app.services.calendar_provider import StubCalendarProvider
 
 
 def _provider_at(fake_now_utc: datetime) -> StubCalendarProvider:
-    return StubCalendarProvider(clock=lambda: fake_now_utc)
+    # The provider no longer holds its own clock — the test passes the sim now
+    # as `start=` directly. Helper kept for readability across tests.
+    return StubCalendarProvider()
 
 
 def test_returns_morning_and_afternoon_blocks_on_a_weekday():
