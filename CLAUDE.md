@@ -133,7 +133,31 @@ PYTHONPATH=. pytest tests/
       to every task in the decomposition. Per-task deadline overrides are deliberately
       out of scope — the Phase 3 scheduler will derive finer-grained per-task effective
       deadlines from the DAG. 28 pytest cases pass.
-- [ ] Phase 3 — scheduling engine (priority math + greedy packing + APScheduler loop)
+- [x] Phase 3a — scheduling engine, pure-compute slice (no APScheduler, no persistence):
+      [app/services/priority.py](backend/app/services/priority.py) implements the spec's
+      full `P(t)` formula with the deadline div-by-zero guard, past-deadline clamp,
+      circadian penalty by local hour, and a graceful fallback when the user has no
+      energy_curve. [app/services/momentum.py](backend/app/services/momentum.py) counts
+      direct dependents per task (transitive reach is a clean upgrade later if needed).
+      [app/services/calendar_provider.py](backend/app/services/calendar_provider.py)
+      ships `StubCalendarProvider` (9–12 + 13–17 weekdays in the owner's tz, skipping
+      already-elapsed time) behind a `CalendarProvider` protocol — Phase 4's Google
+      Calendar MCP plugs in here without packer changes. [app/services/packer.py](backend/app/services/packer.py)
+      does **topological-by-readiness, priority-tiebreaking** packing (a higher-priority
+      dependent never loses its slot because its prereqs weren't seen first), respects
+      immutable anchors (fragmenting slots around them), enforces a daily-capacity cap,
+      and surfaces unscheduled task IDs. `GET /schedule/{owner_id}` returns the proposed
+      schedule. 60 pytest cases pass (32 new). Demoed live against the 28-task DB seeded
+      by two prior `/ingest` calls — 17 of Michael's 22 tasks packed cleanly with correct
+      DAG ordering and priority ranking.
+
+      **Known limitation for Phase 3b:** cross-owner dependencies don't resolve in the
+      pure-compute slice. Chris's tasks correctly identify "prereq=Michael's task X" but
+      have no way to see Michael's schedule until we persist to `calendar_blocks`. In
+      Phase 3b, after each scheduler tick writes to `calendar_blocks`, the next pass for
+      a different owner can read those rows as fixed anchors.
+- [ ] Phase 3b — APScheduler tick + persistence to `calendar_blocks` + cross-owner
+      dep resolution + wire `/ingest` to trigger immediate re-pack
 - [ ] Phase 4 — Google Calendar via MCP
 - [ ] Phase 5 — Now-screen vertical slice (bootstrap Expo here)
 - [ ] Phase 6 — reminders + gamification

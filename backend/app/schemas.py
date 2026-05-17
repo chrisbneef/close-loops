@@ -90,6 +90,25 @@ class TaskOut(BaseModel):
     deadline: Optional[datetime] = None
 
 
+class ScheduledBlockOut(BaseModel):
+    task_id: int
+    title: str
+    start: datetime
+    end: datetime
+    priority: float
+
+
+class ScheduleResponse(BaseModel):
+    owner_id: int
+    generated_at: datetime
+    horizon_days: int
+    blocks: list[ScheduledBlockOut]
+    unscheduled_task_ids: list[int] = Field(
+        default_factory=list,
+        description="Tasks that didn't fit before the horizon — either capacity-exhausted or blocked by an unscheduled prereq.",
+    )
+
+
 class IngestResponse(BaseModel):
     project_id: Optional[int]
     owner_id: int

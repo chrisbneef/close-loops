@@ -1,9 +1,10 @@
 from fastapi import FastAPI
 
-from app.routers import ingest
+from app.routers import ingest, schedule
 
-app = FastAPI(title="Cadence Brain", version="0.2.0")
+app = FastAPI(title="Cadence Brain", version="0.3.0")
 app.include_router(ingest.router)
+app.include_router(schedule.router)
 
 
 @app.get("/health")
