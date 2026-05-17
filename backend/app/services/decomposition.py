@@ -9,6 +9,7 @@ in-memory SQLite + a stubbed Anthropic client.
 from __future__ import annotations
 
 import logging
+from datetime import timezone
 from typing import Optional
 
 import anthropic
@@ -84,10 +85,17 @@ def ingest(
     decomposition: LLMDecomposition = llm_override or llm.decompose(
         raw_goal,
         owner_name=requester.name,
+        owner_timezone=requester.timezone,
         partner_name=partner.name if partner else None,
         project_context=project.north_star if project else None,
         client=anthropic_client,
     )
+
+    # Normalize the (optional) goal deadline to timezone-aware UTC for storage.
+    goal_deadline = decomposition.goal_deadline
+    if goal_deadline is not None and goal_deadline.tzinfo is None:
+        logger.warning("LLM emitted naive datetime; treating as UTC: %s", goal_deadline)
+        goal_deadline = goal_deadline.replace(tzinfo=timezone.utc)
 
     factor = temporal.correction_factor(session, requester.id)
     logger.info("temporal correction factor for user=%s: %.2f", requester.id, factor)
@@ -111,6 +119,7 @@ def ingest(
             delegator_id=delegator_id,
             est_minutes=temporal.apply_correction(ltask.est_minutes, factor),
             importance=ltask.importance,
+            deadline=goal_deadline,  # uniform per-task deadline; scheduler derives finer ordering from the DAG
             status="pending",
         )
         session.add(task)

@@ -4,13 +4,26 @@ These cover owner routing, cycle dropping, dependency persistence, and the
 temporal correction integration — without touching the network.
 """
 
+from datetime import datetime, timezone
+
 from app import models
 from app.schemas import LLMDecomposition, LLMTask
 from app.services.decomposition import ingest
 
 
-def _decomp(*tasks: LLMTask, reasoning: str = "stub decomposition for testing") -> LLMDecomposition:
-    return LLMDecomposition(reasoning=reasoning, tasks=list(tasks))
+def _decomp(*tasks: LLMTask, reasoning: str = "stub decomposition for testing", goal_deadline=None) -> LLMDecomposition:
+    return LLMDecomposition(reasoning=reasoning, tasks=list(tasks), goal_deadline=goal_deadline)
+
+
+def _as_utc(dt):
+    """Normalize a possibly-naive datetime to UTC tz-aware. SQLite drops tzinfo
+    on read from DateTime(timezone=True) columns; Postgres preserves it. Tests
+    use this helper so they pass on both."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def test_happy_path_persists_tasks_and_edges(session, cofounders):
@@ -118,3 +131,45 @@ def test_unknown_project_raises_value_error(session, cofounders):
     decomp = _decomp(LLMTask(title="Lone task", est_minutes=10, importance=5))
     with pytest.raises(ValueError, match="project_id=999"):
         ingest(session, raw_goal="goal goes here", owner_id=michael.id, project_id=999, llm_override=decomp)
+
+
+def test_goal_deadline_propagates_to_all_tasks(session, cofounders):
+    michael, _ = cofounders
+    deadline = datetime(2026, 6, 1, 18, 0, 0, tzinfo=timezone.utc)
+    decomp = _decomp(
+        LLMTask(title="Task one", est_minutes=10, importance=5),
+        LLMTask(title="Task two", est_minutes=15, importance=6),
+        goal_deadline=deadline,
+    )
+
+    resp = ingest(session, raw_goal="ship by june 1", owner_id=michael.id, llm_override=decomp)
+
+    for t in resp.tasks:
+        persisted = session.get(models.Task, t.id)
+        assert _as_utc(persisted.deadline) == deadline
+
+
+def test_no_goal_deadline_leaves_task_deadline_null(session, cofounders):
+    michael, _ = cofounders
+    decomp = _decomp(LLMTask(title="Open ended", est_minutes=10, importance=5))
+
+    resp = ingest(session, raw_goal="just generally improve onboarding", owner_id=michael.id, llm_override=decomp)
+
+    persisted = session.get(models.Task, resp.tasks[0].id)
+    assert persisted.deadline is None
+
+
+def test_naive_goal_deadline_is_normalized_to_utc(session, cofounders):
+    """If the LLM somehow emits a naive datetime, we fall back to UTC and warn."""
+    michael, _ = cofounders
+    naive = datetime(2026, 6, 1, 18, 0, 0)  # no tzinfo
+    decomp = _decomp(
+        LLMTask(title="Naive deadline test", est_minutes=10, importance=5),
+        goal_deadline=naive,
+    )
+
+    resp = ingest(session, raw_goal="goal with naive deadline", owner_id=michael.id, llm_override=decomp)
+
+    persisted = session.get(models.Task, resp.tasks[0].id)
+    # SQLite drops tzinfo on read; the normalize helper handles both dialects.
+    assert _as_utc(persisted.deadline) == naive.replace(tzinfo=timezone.utc)

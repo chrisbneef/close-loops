@@ -15,6 +15,8 @@ Model defaults follow the claude-api skill:
 from __future__ import annotations
 
 import logging
+import zoneinfo
+from datetime import datetime
 
 import anthropic
 
@@ -63,6 +65,24 @@ A single JSON object matching the LLMDecomposition schema:
         (different expertise, currently owns that surface area). Use
         "contractor" only when the task is mechanical and high-volume
         (mass data entry, video editing) — never for strategic work.
+  - `goal_deadline`: see DEADLINE EXTRACTION below.
+
+DEADLINE EXTRACTION
+If the goal mentions OR reasonably implies a deadline, populate
+`goal_deadline` as a timezone-aware ISO 8601 datetime. Use the requester's
+timezone (provided in the user message). For date-only references, use
+18:00:00 (6pm) local — that's end-of-business-day, plausibly the latest a
+business deadline would land.
+
+Examples (assume current date is 2026-05-17, requester timezone
+America/Los_Angeles):
+  - "ship by June 1"          → 2026-06-01T18:00:00-07:00
+  - "before end of month"     → 2026-05-31T18:00:00-07:00
+  - "next Tuesday"            → 2026-05-19T18:00:00-07:00
+  - "before our Q3 launch"    → 2026-09-30T18:00:00-07:00 (Q3 end)
+  - "this weekend"            → 2026-05-17T18:00:00-07:00 (today is Sun)
+  - "ASAP" / "soon"           → null (too vague)
+  - no time reference at all  → null
 
 PRINCIPLES
 - Smallest startable unit beats theoretical completeness.
@@ -122,10 +142,20 @@ Now decompose the goal the user gives you. Output the structured object only.
 """
 
 
+def _resolve_timezone(tz_name: str | None) -> zoneinfo.ZoneInfo:
+    """Best-effort timezone lookup; falls back to UTC on unknown names."""
+    try:
+        return zoneinfo.ZoneInfo(tz_name or "UTC")
+    except zoneinfo.ZoneInfoNotFoundError:
+        logger.warning("Unknown timezone %r, falling back to UTC", tz_name)
+        return zoneinfo.ZoneInfo("UTC")
+
+
 def decompose(
     raw_goal: str,
     *,
     owner_name: str | None = None,
+    owner_timezone: str | None = None,
     partner_name: str | None = None,
     project_context: str | None = None,
     client: anthropic.Anthropic | None = None,
@@ -144,7 +174,10 @@ def decompose(
             )
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
-    user_context_parts: list[str] = []
+    tz = _resolve_timezone(owner_timezone)
+    today_local = datetime.now(tz).date().isoformat()
+
+    user_context_parts: list[str] = [f"Current date: {today_local} ({tz.key})."]
     if owner_name or partner_name:
         names = []
         if owner_name:
@@ -154,7 +187,7 @@ def decompose(
         user_context_parts.append("Team: " + ", ".join(names) + ".")
     if project_context:
         user_context_parts.append(f"Project context: {project_context}")
-    user_context = ("\n".join(user_context_parts) + "\n\n") if user_context_parts else ""
+    user_context = "\n".join(user_context_parts) + "\n\n"
 
     response = client.messages.parse(
         model=model,

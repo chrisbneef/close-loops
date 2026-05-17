@@ -49,6 +49,17 @@ class LLMDecomposition(BaseModel):
         min_length=20,
         description="Brief step-by-step explanation of how you broke the goal down, before listing tasks.",
     )
+    goal_deadline: Optional[datetime] = Field(
+        None,
+        description=(
+            "If the goal mentions or implies a deadline (explicit date like 'June 1', "
+            "or a relative phrase like 'by EOQ', 'before next Tuesday', 'end of month'), "
+            "populate this as a timezone-aware ISO 8601 datetime in the requester's "
+            "timezone (provided in the user message). Use 18:00:00 (end of business day) "
+            "if only a calendar date is given. Leave null if no deadline is mentioned or "
+            "reasonably implied."
+        ),
+    )
     tasks: list[LLMTask] = Field(..., min_length=1, max_length=25)
 
 

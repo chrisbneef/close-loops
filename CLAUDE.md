@@ -105,6 +105,12 @@ PYTHONPATH=. pytest tests/
   schemas server-side — no need for the spec's "try/except, strip fences, re-prompt once"
   loop. If a future schema violation happens, it surfaces as `pydantic.ValidationError`
   bubbled up to the router and returned as a 502.
+- **SQLite drops tzinfo on `DateTime(timezone=True)` reads** even though Pydantic /
+  SQLAlchemy stored it correctly. Postgres reads preserve tz. Tests use a `_as_utc()`
+  helper that normalizes both. For Phase 3, the scheduler should normalize at read time
+  too (either via a SQLAlchemy `TypeDecorator` that always returns UTC-aware, or a
+  small `_as_utc()` shim at the boundary). Don't compare naive vs aware datetimes
+  directly — Python will raise `TypeError`.
 
 ## Phase status
 - [x] Phase 0 — env setup
@@ -114,11 +120,19 @@ PYTHONPATH=. pytest tests/
       `claude-opus-4-7` via `messages.parse()` with Pydantic-typed output (no JSON
       string parsing). Adaptive thinking + `effort: "high"`. System prompt has
       `cache_control: ephemeral` (caches once prefix exceeds ~4096 tokens on Opus 4.7;
-      currently ~2500 tokens — adding 1–2 more few-shots would cross the threshold).
-      Pipeline: cycle-safe DAG ingest → temporal correction (mean(actual/estimated)
-      clamped 0.5–3.0; falls back to 1.0 under 3 samples) → owner routing
-      (self/partner/contractor) → persistence → reschedule stub. 25 pytest cases pass.
-      Empty/missing `ANTHROPIC_API_KEY` returns a clean 503 with a useful message.
+      currently ~3000 tokens after Phase 2.1 — adding 1–2 more few-shots would cross
+      the threshold). Pipeline: cycle-safe DAG ingest → temporal correction
+      (mean(actual/estimated) clamped 0.5–3.0; falls back to 1.0 under 3 samples) →
+      owner routing (self/partner/contractor) → persistence → reschedule stub. Verified
+      end-to-end against live Opus 4.7 on a fresh goal — 14 tasks, 14 edges, 0 dropped,
+      clean DAG, smart owner routing (Chris → web, Michael → strategy, contractor → video edit).
+- [x] Phase 2.1 — deadline extraction. `LLMDecomposition.goal_deadline: Optional[datetime]`
+      added; prompt instructs Claude to interpret "by June 1" / "end of month" / "Q3"
+      using the requester's timezone (passed in user-message context along with today's
+      date). Pipeline normalizes naive datetimes to UTC and applies the deadline uniformly
+      to every task in the decomposition. Per-task deadline overrides are deliberately
+      out of scope — the Phase 3 scheduler will derive finer-grained per-task effective
+      deadlines from the DAG. 28 pytest cases pass.
 - [ ] Phase 3 — scheduling engine (priority math + greedy packing + APScheduler loop)
 - [ ] Phase 4 — Google Calendar via MCP
 - [ ] Phase 5 — Now-screen vertical slice (bootstrap Expo here)
