@@ -3,7 +3,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import gamification, ingest, now, oauth, reports, schedule, users
+from app.routers import (
+    briefing, gamification, ingest, now, oauth, presence, reports, schedule, users,
+)
 from app.services import reminder_loop, scheduler_loop
 
 
@@ -38,6 +40,8 @@ app.include_router(now.router)
 app.include_router(reports.router)
 app.include_router(gamification.router)
 app.include_router(users.router)
+app.include_router(briefing.router)
+app.include_router(presence.router)
 
 
 @app.get("/health")

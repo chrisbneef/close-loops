@@ -38,6 +38,15 @@ export interface GamificationOut {
   last_action_at: string | null;
 }
 
+export interface PartnerPresence {
+  user_id: number;
+  user_name: string;
+  status: 'focusing' | 'idle' | 'offline';
+  current_task_id: number | null;
+  current_task_title: string | null;
+  updated_at: string | null;
+}
+
 async function jsonRequest<T>(
   path: string,
   init: RequestInit = {},
@@ -76,5 +85,12 @@ export const api = {
   },
   getGamification(ownerId: number): Promise<GamificationOut> {
     return jsonRequest<GamificationOut>(`/gamification?owner_id=${ownerId}`);
+  },
+  // Returns null when there's no partner (solo team) or the partner has never
+  // had a presence row. jsonRequest treats valid JSON `null` as `null`.
+  getPartnerPresence(ownerId: number): Promise<PartnerPresence | null> {
+    return jsonRequest<PartnerPresence | null>(
+      `/presence/partner?owner_id=${ownerId}`,
+    );
   },
 };

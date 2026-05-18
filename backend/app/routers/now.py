@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.db import get_session
 from app.models import CalendarBlock, ExecutionLog, Task
 from app.schemas import NextActionResponse, TaskOut
-from app.services import gamification, reschedule
+from app.services import gamification, presence, reschedule
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,10 @@ def start_task(task_id: int, session: Session = Depends(get_session)) -> None:
     task.status = "in_progress"
     task.started_at = datetime.now(timezone.utc)
     gamification.award_start(session, task.owner_id)
+    # Body-doubling: tell the partner I'm heads-down on this one.
+    presence.update_presence(
+        session, task.owner_id, status="focusing", current_task_id=task.id,
+    )
     session.commit()
     logger.info("task start task_id=%s owner_id=%s", task_id, task.owner_id)
 
@@ -133,6 +137,9 @@ def complete_task(task_id: int, session: Session = Depends(get_session)) -> Next
         )
     )
     gamification.award_done(session, task.owner_id, now=now)
+    presence.update_presence(
+        session, task.owner_id, status="idle", current_task_id=None,
+    )
     session.commit()
     logger.info(
         "task done task_id=%s owner_id=%s est=%s actual=%s",

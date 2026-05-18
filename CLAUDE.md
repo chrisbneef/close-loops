@@ -301,4 +301,33 @@ PYTHONPATH=. pytest tests/
           is something you run from your own laptop with Expo Go on your phone.
           v1 ships tier 2 (push) only; Section 8.1's tier 1 (in-app pulse) and
           tier 3 (push-requiring-ack) are future work.
-- [ ] Phase 7 — daily closed-loop briefing + body doubling
+- [x] Phase 7 — daily closed-loop briefing + body doubling.
+      **7a (briefing):** [app/services/briefing.py](backend/app/services/briefing.py)
+      gathers yesterday's completions (from `execution_log`) + today's scheduled
+      tasks (from `calendar_blocks`) + streak (from `gamification_state`) for a
+      specific owner, then asks **Claude Sonnet 4.6** (Opus 4.7 is overkill for
+      daily summarization) to write 3-5 warm-and-direct sentences. System prompt
+      enforces tone: surface the single most important thing first, never
+      patronize, no emoji, no fluff. [app/services/slack.py](backend/app/services/slack.py)
+      posts to the webhook URL via httpx; silent no-op if `SLACK_WEBHOOK_URL`
+      isn't set so dev work doesn't error. `GET /briefing/today?owner_id=N&post_to_slack=bool`
+      runs the gather→generate→post chain; returns the briefing text either way
+      so a Slack outage doesn't lose the message. Per the spec's "expose as a
+      plain HTTP endpoint so any scheduler can consume it" guidance, no
+      in-process cron is wired — the team's existing N8N/Zoho automation
+      hits this endpoint on whatever schedule they want.
+      **7b (body doubling):** [app/services/presence.py](backend/app/services/presence.py)
+      wraps the `presence` table with upsert + read helpers; the read helper
+      enforces a 5-minute staleness rule (status forced to 'offline' if
+      `updated_at` is older than that, so a crashed app doesn't leave a
+      ghost-status visible to the partner). `POST /presence/heartbeat?owner_id=N`
+      accepts {status, current_task_id?}. `GET /presence/partner?owner_id=N`
+      returns the OTHER cofounder's effective presence (status, current task
+      title resolved server-side) — null when solo team or partner has never
+      been online. `/tasks/{id}/start` and `/done` now also call
+      `update_presence` so focusing/idle transitions happen automatically.
+      [cadence/app/index.tsx](cadence/app/index.tsx) polls `/presence/partner`
+      every 30s; `PartnerLine` shows "chris is heads-down on 'title'" (focusing)
+      or "chris is here" (idle); hidden when partner is offline. Ambient
+      awareness, not surveillance (the spec's explicit framing).
+      26 new tests (171 total) across 7a + 7b.

@@ -21,7 +21,12 @@ import {
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { api, type GamificationOut, type NextActionResponse } from '@/src/api';
+import {
+  api,
+  type GamificationOut,
+  type NextActionResponse,
+  type PartnerPresence,
+} from '@/src/api';
 import { colors, radii, spacing, type } from '@/src/theme';
 import { formatTimer, useTimer } from '@/src/timer-store';
 
@@ -44,6 +49,13 @@ export default function NowScreen() {
   const gamificationQuery = useQuery({
     queryKey: ['gamification', OWNER_ID],
     queryFn: () => api.getGamification(OWNER_ID),
+  });
+
+  // Body doubling — poll partner's presence every 30s. Ambient, not nagging.
+  const partnerQuery = useQuery({
+    queryKey: ['partner-presence', OWNER_ID],
+    queryFn: () => api.getPartnerPresence(OWNER_ID),
+    refetchInterval: 30_000,
   });
 
   const startMutation = useMutation({
@@ -109,6 +121,8 @@ export default function NowScreen() {
         <Text style={s.wordmarkText}>cadence</Text>
         <GameChip data={gamificationQuery.data} />
       </View>
+
+      <PartnerLine partner={partnerQuery.data} />
 
       <View style={s.center}>
         <Text style={s.meta}>NEXT ACTION</Text>
@@ -176,6 +190,31 @@ function ActionButton({
     >
       <Text style={s.buttonText}>{label}</Text>
     </Pressable>
+  );
+}
+
+/**
+ * Body-doubling presence line. Shows what the OTHER cofounder is doing right
+ * now: "chris is heads-down on 'Refactor auth'" or "chris is idle". Hidden
+ * when partner is offline / never online / no partner. Ambient awareness,
+ * not surveillance — the spec is explicit about this.
+ */
+function PartnerLine({ partner }: { partner: PartnerPresence | null | undefined }) {
+  if (!partner || partner.status === 'offline') return null;
+  const name = partner.user_name.toLowerCase();
+  if (partner.status === 'focusing' && partner.current_task_title) {
+    return (
+      <Text style={s.partner} numberOfLines={1}>
+        {name} is heads-down on{' '}
+        <Text style={s.partnerHighlight}>'{partner.current_task_title}'</Text>
+      </Text>
+    );
+  }
+  // status === 'idle' or focusing without a task title
+  return (
+    <Text style={s.partner} numberOfLines={1}>
+      {name} is here
+    </Text>
   );
 }
 
@@ -279,6 +318,15 @@ const s = StyleSheet.create({
     ...type.micro,
     color: colors.text,
     letterSpacing: 0.5,
+  },
+  partner: {
+    ...type.caption,
+    color: colors.textFaint,
+    marginBottom: spacing.lg,
+  },
+  partnerHighlight: {
+    color: colors.textDim,
+    fontFamily: 'DMSans_500Medium',
   },
   center: {
     flex: 1,
