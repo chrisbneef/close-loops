@@ -109,6 +109,29 @@ class ScheduleResponse(BaseModel):
     )
 
 
+class NextActionResponse(BaseModel):
+    """Response for GET /next-action — what the user should do RIGHT NOW.
+
+    `current` is the single next task (None if owner has nothing scheduled).
+    `up_next` shows the next 2 in calendar order, dimmed in the UI."""
+
+    current: Optional[TaskOut] = None
+    current_start: Optional[datetime] = Field(
+        None, description="When this task is scheduled to start (UTC)."
+    )
+    current_end: Optional[datetime] = Field(
+        None, description="When this task is scheduled to end (UTC)."
+    )
+    why: Optional[str] = Field(
+        None,
+        description="One-line human-readable reason this is the next action (e.g. 'soonest scheduled block').",
+    )
+    up_next: list[TaskOut] = Field(
+        default_factory=list,
+        description="The next 1-2 tasks after `current`, in calendar order.",
+    )
+
+
 class IngestResponse(BaseModel):
     project_id: Optional[int]
     owner_id: int

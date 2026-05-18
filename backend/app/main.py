@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import ingest, oauth, schedule
+from app.routers import ingest, now, oauth, schedule
 from app.services import scheduler_loop
 
 
@@ -15,10 +16,23 @@ async def lifespan(app: FastAPI):
         scheduler_loop.stop()
 
 
-app = FastAPI(title="Cadence Brain", version="0.4.0", lifespan=lifespan)
+app = FastAPI(title="Cadence Brain", version="0.5.0", lifespan=lifespan)
+
+# CORS — the Expo web/dev target serves from a different origin (typically
+# http://localhost:8081 or an exp:// URL), so the browser blocks API calls
+# without these headers. Wide-open for dev; tighten for production.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(ingest.router)
 app.include_router(schedule.router)
 app.include_router(oauth.router)
+app.include_router(now.router)
 
 
 @app.get("/health")

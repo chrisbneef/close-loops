@@ -230,6 +230,34 @@ PYTHONPATH=. pytest tests/
       gcal_event_id) → 14 events on Michael's Google Calendar + 2 on Chris's. SQLite
       `cadence.db` is now stale and can be deleted whenever; tests still use
       `:memory:` SQLite, dev defaults to Postgres if `DATABASE_URL` is set.
+- [x] Phase 5 — Now-screen vertical slice.
+      **Backend (5a):** three new endpoints in [app/routers/now.py](backend/app/routers/now.py)
+      — `GET /next-action?owner_id=N` returns the earliest-starting calendar_block
+      whose task is still surfaceable; `POST /tasks/{id}/start` flips status to
+      `in_progress` + stamps `started_at`; `POST /tasks/{id}/done` stamps
+      `finished_at`, logs to `execution_log` (feeds temporal correction), triggers
+      a reschedule, and returns the new `next-action` inline so the UI flips
+      without a second round-trip. CORS middleware added so the Expo web target
+      can hit the API from a different port. 11 new tests (109 total).
+      **Frontend (5b/5c):** Expo SDK 54 (React 19, Reanimated 4) at [cadence/](cadence/).
+      Stripped the default `tabs` template; single Stack screen. Aesthetic commitment
+      from the `frontend-design` skill: refined minimalism with intentional warmth
+      — warm dark palette, Fraunces serif reserved for the task title only, DM Sans
+      for everything else, single dominant terra-cotta accent for the action button.
+      [cadence/src/theme.ts](cadence/src/theme.ts) is the only source of design
+      tokens. [cadence/src/api.ts](cadence/src/api.ts) is a tiny fetch wrapper
+      (typed). [cadence/src/timer-store.ts](cadence/src/timer-store.ts) is the local
+      Pomodoro state (Zustand). [cadence/app/_layout.tsx](cadence/app/_layout.tsx)
+      loads Google Fonts behind the SplashScreen + mounts the QueryClient.
+      [cadence/app/index.tsx](cadence/app/index.tsx) is the Now screen — wordmark,
+      single task card with the why-line and countdown, Start→Done button,
+      dim Up-Next preview. No NativeWind (compatibility friction on SDK 54);
+      `StyleSheet` + design tokens instead. `OWNER_ID` is hardcoded to 1 (Michael)
+      for v1; auth/login comes later.
+      **Demo:** `cd cadence && npx expo start --web` serves the app at
+      http://localhost:8081 against the brain at http://localhost:8000 (backend
+      should run with `--host 0.0.0.0` if you want to hit it from a phone via
+      LAN; set `EXPO_PUBLIC_API_BASE=http://LAN_IP:8000` when starting expo).
 - [ ] Phase 5 — Now-screen vertical slice (bootstrap Expo here)
 - [ ] Phase 4 — Google Calendar via MCP
 - [ ] Phase 6 — reminders + gamification
