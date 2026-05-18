@@ -260,5 +260,23 @@ PYTHONPATH=. pytest tests/
       LAN; set `EXPO_PUBLIC_API_BASE=http://LAN_IP:8000` when starting expo).
 - [ ] Phase 5 — Now-screen vertical slice (bootstrap Expo here)
 - [ ] Phase 4 — Google Calendar via MCP
-- [ ] Phase 6 — reminders + gamification
+- [ ] Phase 6 — reminders + gamification + **execution analytics** (pinned 2026-05-17).
+      Three workstreams:
+      (a) **Reminders** — multi-modal escalation per Section 8.1: in-app pulse →
+          push notification → push requiring acknowledgement. Expo push token
+          on `users.push_token`, server-side fire via `EXPO_ACCESS_TOKEN`.
+      (b) **Gamification** — micro-win points on start AND done, daily streak,
+          per-project progress bars with gentle idle decay (never punitive).
+          `gamification_state` table is already in the schema (Phase 1) — wire
+          it up here.
+      (c) **Execution analytics + reports** — per user request: weekly digest of
+          "completed on time / late / avg actual-vs-estimated." The raw data is
+          ALREADY in `execution_log` + `tasks.finished_at` vs `tasks.deadline`.
+          One small additive change needed: at /tasks/{id}/done time, copy the
+          final `calendar_block.start` into a new `execution_log.scheduled_for`
+          column (Alembic 0003) so we preserve the scheduled-vs-actual divergence
+          across reschedules. Then a `GET /reports/weekly?owner_id=N` endpoint
+          rolls it up: { completed_on_time, completed_late, avg_actual_over_est,
+          longest_overrun_task, by_importance_breakdown }. The Phase 7 briefing
+          can render the same data conversationally via Claude.
 - [ ] Phase 7 — daily closed-loop briefing + body doubling
