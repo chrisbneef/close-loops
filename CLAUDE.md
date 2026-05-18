@@ -222,8 +222,14 @@ PYTHONPATH=. pytest tests/
       `event_id` on each row. 16 new tests (97 total). Live demo: 26 events on
       Michael's calendar + 6 on Chris's, all `cadence_block`-tagged, dependency-
       ordered, dropped into actual work-hour slots.
-- [ ] Phase 4.1 — migrate from SQLite to Supabase Postgres (alembic upgrade against
-      the new URL, re-seed cofounders, re-OAuth, re-ingest a goal)
+- [x] Phase 4.1 — migrated to Supabase Postgres. `alembic upgrade head` against the
+      Supabase URL applied both migrations (0001 + 0002) including the Postgres-only
+      `text_pattern_ops` index on `delegation_graph.materialized_path`. Cofounders
+      re-seeded with emails; both re-OAuthed. Verified end-to-end on Postgres: the
+      same press-launch /ingest produced 16 tasks → 16 calendar_blocks (all with
+      gcal_event_id) → 14 events on Michael's Google Calendar + 2 on Chris's. SQLite
+      `cadence.db` is now stale and can be deleted whenever; tests still use
+      `:memory:` SQLite, dev defaults to Postgres if `DATABASE_URL` is set.
 - [ ] Phase 5 — Now-screen vertical slice (bootstrap Expo here)
 - [ ] Phase 4 — Google Calendar via MCP
 - [ ] Phase 6 — reminders + gamification
