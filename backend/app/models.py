@@ -220,7 +220,12 @@ class Presence(Base):
 
 
 class ExecutionLog(Base):
-    """Training data for the temporal-correction factor (Section 4 pipeline step 3)."""
+    """Training data for the temporal-correction factor (Section 4 pipeline step 3)
+    AND the source of truth for the weekly /reports endpoint (Phase 6a).
+
+    `scheduled_for` is the calendar_block.start value at the moment the user hit Done
+    — captured before the reschedule wipes the block. Lets the report show drift
+    between when the brain wanted you to do it vs when you actually did."""
 
     __tablename__ = "execution_log"
 
@@ -231,6 +236,7 @@ class ExecutionLog(Base):
     actual_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    scheduled_for: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         Index("ix_execution_log_user", "user_id"),

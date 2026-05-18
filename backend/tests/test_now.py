@@ -172,6 +172,9 @@ def test_done_after_start_logs_actual_minutes(client):
         log = s.query(models.ExecutionLog).filter_by(task_id=task_ids[0]).one()
         assert 9 <= log.actual_minutes <= 11  # ~10 minutes
         assert log.estimated_minutes == 25
+        # Phase 6a: scheduled_for captured from the calendar_block that existed
+        # at /done time (before reschedule wiped it).
+        assert log.scheduled_for is not None
 
 
 def test_done_without_start_falls_back_to_estimate(client):

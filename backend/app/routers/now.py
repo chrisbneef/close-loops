@@ -111,6 +111,15 @@ def complete_task(task_id: int, session: Session = Depends(get_session)) -> Next
     else:
         actual_minutes = task.est_minutes
         task.started_at = now  # so execution_log's NOT NULL started_at is satisfied
+
+    # Capture the brain's last scheduled start for this task BEFORE the reschedule
+    # below wipes the calendar_block. Lets /reports/weekly compute drift between
+    # scheduled vs actual completion time.
+    block = session.execute(
+        select(CalendarBlock).where(CalendarBlock.task_id == task.id).limit(1)
+    ).scalar_one_or_none()
+    scheduled_for = block.start if block else None
+
     session.add(
         ExecutionLog(
             task_id=task.id,
@@ -119,6 +128,7 @@ def complete_task(task_id: int, session: Session = Depends(get_session)) -> Next
             actual_minutes=actual_minutes,
             started_at=task.started_at,
             finished_at=now,
+            scheduled_for=scheduled_for,
         )
     )
     session.commit()

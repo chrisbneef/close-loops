@@ -260,23 +260,23 @@ PYTHONPATH=. pytest tests/
       LAN; set `EXPO_PUBLIC_API_BASE=http://LAN_IP:8000` when starting expo).
 - [ ] Phase 5 — Now-screen vertical slice (bootstrap Expo here)
 - [ ] Phase 4 — Google Calendar via MCP
-- [ ] Phase 6 — reminders + gamification + **execution analytics** (pinned 2026-05-17).
-      Three workstreams:
-      (a) **Reminders** — multi-modal escalation per Section 8.1: in-app pulse →
-          push notification → push requiring acknowledgement. Expo push token
-          on `users.push_token`, server-side fire via `EXPO_ACCESS_TOKEN`.
-      (b) **Gamification** — micro-win points on start AND done, daily streak,
+- [ ] Phase 6 — reminders + gamification + execution analytics.
+      Three workstreams; 6a done, 6b/6c pending.
+      (a) [x] **Execution analytics + reports** — Alembic 0003 added
+          `execution_log.scheduled_for`, captured at `/tasks/{id}/done` from the
+          live `calendar_block.start` BEFORE reschedule wipes the block. New
+          `GET /reports/weekly?owner_id=N` (configurable `end_date` + `window_days`)
+          returns `{ total_completed, completed_on_time, completed_late, no_deadline,
+          avg_actual_over_est, total_minutes_estimated/actual, longest_overrun,
+          by_importance (importance → {completed, on_time, late}), rows[] }`.
+          12 new tests (121 total). Live-verified against Postgres — picked up
+          4 organic completions from the user's click-testing of the Now screen
+          and computed correct stats.
+      (b) **Reminders** — multi-modal escalation per Section 8.1: in-app pulse →
+          push notification → push requiring acknowledgement. Expo push token on
+          `users.push_token`, server-side fire via `EXPO_ACCESS_TOKEN`.
+      (c) **Gamification** — micro-win points on start AND done, daily streak,
           per-project progress bars with gentle idle decay (never punitive).
           `gamification_state` table is already in the schema (Phase 1) — wire
           it up here.
-      (c) **Execution analytics + reports** — per user request: weekly digest of
-          "completed on time / late / avg actual-vs-estimated." The raw data is
-          ALREADY in `execution_log` + `tasks.finished_at` vs `tasks.deadline`.
-          One small additive change needed: at /tasks/{id}/done time, copy the
-          final `calendar_block.start` into a new `execution_log.scheduled_for`
-          column (Alembic 0003) so we preserve the scheduled-vs-actual divergence
-          across reschedules. Then a `GET /reports/weekly?owner_id=N` endpoint
-          rolls it up: { completed_on_time, completed_late, avg_actual_over_est,
-          longest_overrun_task, by_importance_breakdown }. The Phase 7 briefing
-          can render the same data conversationally via Claude.
 - [ ] Phase 7 — daily closed-loop briefing + body doubling

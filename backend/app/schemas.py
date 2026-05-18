@@ -132,6 +132,57 @@ class NextActionResponse(BaseModel):
     )
 
 
+class ReportRow(BaseModel):
+    """One completed task in the report window."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    task_id: int
+    title: str
+    importance: int
+    estimated_minutes: int
+    actual_minutes: int
+    deadline: Optional[datetime] = None
+    scheduled_for: Optional[datetime] = None
+    started_at: datetime
+    finished_at: datetime
+    on_time: Optional[bool] = Field(
+        None,
+        description="True if finished_at <= deadline. None when the task had no deadline.",
+    )
+    over_estimate_ratio: float = Field(
+        ...,
+        description="actual_minutes / estimated_minutes. 1.0 = on estimate, 1.5 = 50% over.",
+    )
+
+
+class WeeklyReport(BaseModel):
+    owner_id: int
+    start_date: datetime
+    end_date: datetime
+    total_completed: int
+    completed_on_time: int = Field(0, description="finished_at <= deadline")
+    completed_late: int = Field(0, description="finished_at > deadline")
+    no_deadline: int = Field(0, description="tasks completed but no deadline was set")
+    avg_actual_over_est: Optional[float] = Field(
+        None,
+        description="Mean of actual_minutes / estimated_minutes across the window. None if no tasks.",
+    )
+    total_minutes_estimated: int = 0
+    total_minutes_actual: int = 0
+    longest_overrun: Optional[ReportRow] = Field(
+        None, description="Task with the biggest (actual - estimated) delta in the window."
+    )
+    by_importance: dict[int, dict[str, int]] = Field(
+        default_factory=dict,
+        description=(
+            "{importance: {'completed': n, 'on_time': n, 'late': n}}. "
+            "Helps see whether high-importance work is actually getting done on time."
+        ),
+    )
+    rows: list[ReportRow] = Field(default_factory=list, description="All completed tasks in the window, newest first.")
+
+
 class IngestResponse(BaseModel):
     project_id: Optional[int]
     owner_id: int
