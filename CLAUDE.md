@@ -282,7 +282,23 @@ PYTHONPATH=. pytest tests/
           and /done. Frontend shows a small "★ N · M-day streak" chip in the
           Now-screen header, hidden when points=0; query invalidates on Start
           + Done so the number updates without polling. 9 new tests (130 total).
-      (c) **Reminders** — multi-modal escalation per Section 8.1: in-app pulse →
-          push notification → push requiring acknowledgement. Expo push token on
-          `users.push_token`, server-side fire via `EXPO_ACCESS_TOKEN`.
+      (c) [x] **Reminders / push notifications** — Alembic 0004 added
+          `calendar_blocks.reminder_sent_at` (dedup key; resets when scheduler
+          re-packs the block). `app/services/notifications.py` is a sync httpx
+          wrapper around the Expo Push API; validates token format, swallows
+          Expo error envelopes into `PushError`. `app/services/reminder_loop.py`
+          ticks every 60s (configurable via `REMINDER_TICK_SECONDS`) and finds
+          blocks starting within `REMINDER_LEAD_MINUTES` (default 5) that have
+          a `push_token` user, status pending/scheduled, and no prior
+          `reminder_sent_at`. Sends "Up next at HH:MM" with task title; one bad
+          token doesn't take down the rest of the tick. `POST /users/{id}/push-token`
+          validates + stores the Expo token; pass empty string to clear.
+          Frontend `cadence/src/notifications.ts` registers on app load
+          (silent on web/simulator/permission-denied), POSTs token to backend.
+          `_layout.tsx` fires it once via useEffect. 14 new tests (144 total).
+          **Live demo needs Expo Go on a phone that can reach the backend** —
+          this dev sandbox isn't routable from a real phone, so the push demo
+          is something you run from your own laptop with Expo Go on your phone.
+          v1 ships tier 2 (push) only; Section 8.1's tier 1 (in-app pulse) and
+          tier 3 (push-requiring-ack) are future work.
 - [ ] Phase 7 — daily closed-loop briefing + body doubling

@@ -4,7 +4,7 @@
  * (Now is the only screen for Phase 5; Today/Week/Momentum/Together come later).
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
@@ -20,7 +20,10 @@ import {
 } from '@expo-google-fonts/dm-sans';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+import { registerForPush } from '@/src/notifications';
 import { colors } from '@/src/theme';
+
+const OWNER_ID = 1; // matches the Now screen's hardcoded owner; replace with auth later
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -45,6 +48,14 @@ export default function RootLayout() {
   useEffect(() => {
     if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
   }, [fontsLoaded]);
+
+  // Fire-and-forget push registration. Web/simulators silently bail; real
+  // device users see one permission prompt on first launch.
+  useEffect(() => {
+    registerForPush(OWNER_ID).catch((e) =>
+      console.warn('push registration error:', e),
+    );
+  }, []);
 
   if (!fontsLoaded) return null;
 

@@ -33,5 +33,9 @@ class Settings(BaseSettings):
     enable_scheduler_loop: bool = True
     scheduler_tick_seconds: int = 60
 
+    # Reminder loop — Phase 6c. Fires push N minutes before scheduled start.
+    reminder_tick_seconds: int = 60
+    reminder_lead_minutes: int = 5
+
 
 settings = Settings()

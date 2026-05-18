@@ -183,6 +183,10 @@ class CalendarBlock(Base):
     start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Phase 6c — set when the reminder_loop fires a push for this block. Reset
+    # to NULL whenever the block is recreated (scheduler re-pack), so a new
+    # scheduled time always gets one fresh ping.
+    reminder_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False

@@ -3,16 +3,18 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import gamification, ingest, now, oauth, reports, schedule
-from app.services import scheduler_loop
+from app.routers import gamification, ingest, now, oauth, reports, schedule, users
+from app.services import reminder_loop, scheduler_loop
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     scheduler_loop.start()
+    reminder_loop.start()
     try:
         yield
     finally:
+        reminder_loop.stop()
         scheduler_loop.stop()
 
 
@@ -35,6 +37,7 @@ app.include_router(oauth.router)
 app.include_router(now.router)
 app.include_router(reports.router)
 app.include_router(gamification.router)
+app.include_router(users.router)
 
 
 @app.get("/health")
