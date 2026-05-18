@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.db import get_session
 from app.models import CalendarBlock, ExecutionLog, Task
 from app.schemas import NextActionResponse, TaskOut
-from app.services import reschedule
+from app.services import gamification, reschedule
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +83,7 @@ def start_task(task_id: int, session: Session = Depends(get_session)) -> None:
         raise HTTPException(status_code=409, detail="task already done — cannot restart")
     task.status = "in_progress"
     task.started_at = datetime.now(timezone.utc)
+    gamification.award_start(session, task.owner_id)
     session.commit()
     logger.info("task start task_id=%s owner_id=%s", task_id, task.owner_id)
 
@@ -131,6 +132,7 @@ def complete_task(task_id: int, session: Session = Depends(get_session)) -> Next
             scheduled_for=scheduled_for,
         )
     )
+    gamification.award_done(session, task.owner_id, now=now)
     session.commit()
     logger.info(
         "task done task_id=%s owner_id=%s est=%s actual=%s",

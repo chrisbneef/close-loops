@@ -21,7 +21,7 @@ import {
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { api, type NextActionResponse } from '@/src/api';
+import { api, type GamificationOut, type NextActionResponse } from '@/src/api';
 import { colors, radii, spacing, type } from '@/src/theme';
 import { formatTimer, useTimer } from '@/src/timer-store';
 
@@ -41,9 +41,18 @@ export default function NowScreen() {
     refetchInterval: 30_000,
   });
 
+  const gamificationQuery = useQuery({
+    queryKey: ['gamification', OWNER_ID],
+    queryFn: () => api.getGamification(OWNER_ID),
+  });
+
   const startMutation = useMutation({
     mutationFn: (taskId: number) => api.startTask(taskId),
-    onSuccess: (_, taskId) => timer.start(taskId),
+    onSuccess: (_, taskId) => {
+      timer.start(taskId);
+      // +5 points awarded server-side; pull the fresh count.
+      queryClient.invalidateQueries({ queryKey: ['gamification', OWNER_ID] });
+    },
   });
 
   const doneMutation = useMutation({
@@ -53,6 +62,8 @@ export default function NowScreen() {
       // The /done endpoint returns the new NextAction inline — push it into
       // the query cache so the UI flips immediately, no extra round-trip.
       queryClient.setQueryData<NextActionResponse>(['next-action', OWNER_ID], next);
+      // Streak + points changed; refresh the chip.
+      queryClient.invalidateQueries({ queryKey: ['gamification', OWNER_ID] });
     },
   });
 
@@ -94,8 +105,9 @@ export default function NowScreen() {
 
   return (
     <SafeAreaView style={s.root}>
-      <View style={s.wordmark}>
+      <View style={s.header}>
         <Text style={s.wordmarkText}>cadence</Text>
+        <GameChip data={gamificationQuery.data} />
       </View>
 
       <View style={s.center}>
@@ -167,6 +179,33 @@ function ActionButton({
   );
 }
 
+/**
+ * Tiny chip in the header. Two stats only:
+ *   ★ N          → total points (lifetime; never decreases)
+ *   N-day streak → consecutive days with at least one Done
+ *
+ * No animation in v1. If the user blinks past it, they still feel the number
+ * tick when they look back; we resist the temptation to splash a burst over
+ * the action button. Calm, not noisy.
+ */
+function GameChip({ data }: { data?: GamificationOut }) {
+  if (!data || data.points === 0) return null;
+  return (
+    <View style={s.chip}>
+      <Text style={s.chipPoints}>★ {data.points}</Text>
+      {data.current_streak > 0 && (
+        <>
+          <Text style={s.chipDivider}>·</Text>
+          <Text style={s.chipStreak}>
+            {data.current_streak}-day streak
+          </Text>
+        </>
+      )}
+    </View>
+  );
+}
+
+
 function Centered({ children }: { children: React.ReactNode }) {
   return (
     <SafeAreaView style={s.root}>
@@ -184,7 +223,7 @@ function Centered({ children }: { children: React.ReactNode }) {
 function Empty() {
   return (
     <SafeAreaView style={s.root}>
-      <View style={s.wordmark}>
+      <View style={s.header}>
         <Text style={s.wordmarkText}>cadence</Text>
       </View>
       <View style={s.center}>
@@ -206,14 +245,40 @@ const s = StyleSheet.create({
     backgroundColor: colors.bg,
     paddingHorizontal: spacing.lg,
   },
-  wordmark: {
+  header: {
     paddingTop: spacing.md,
     paddingBottom: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   wordmarkText: {
     ...type.micro,
     color: colors.textFaint,
     textTransform: 'lowercase',
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.surface,
+    borderRadius: radii.pill,
+  },
+  chipPoints: {
+    ...type.micro,
+    color: colors.accent,
+    letterSpacing: 0.5,
+  },
+  chipDivider: {
+    ...type.micro,
+    color: colors.textFaint,
+  },
+  chipStreak: {
+    ...type.micro,
+    color: colors.text,
+    letterSpacing: 0.5,
   },
   center: {
     flex: 1,

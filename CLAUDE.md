@@ -272,11 +272,17 @@ PYTHONPATH=. pytest tests/
           12 new tests (121 total). Live-verified against Postgres — picked up
           4 organic completions from the user's click-testing of the Now screen
           and computed correct stats.
-      (b) **Reminders** — multi-modal escalation per Section 8.1: in-app pulse →
+      (b) [x] **Gamification** — `app/services/gamification.py` does the math:
+          +5 on Start, +20 on Done, +10 first-of-day bonus on Done. Streak
+          continues if last done was yesterday in the OWNER'S timezone (not UTC
+          — tested), resets to 1 after a 2+ day gap, longest_streak preserved
+          across resets. `gamification_state` row is lazily created on first
+          action. `GET /gamification?owner_id=N` returns the current counters
+          (zeros if user never played). Hooked into existing /tasks/{id}/start
+          and /done. Frontend shows a small "★ N · M-day streak" chip in the
+          Now-screen header, hidden when points=0; query invalidates on Start
+          + Done so the number updates without polling. 9 new tests (130 total).
+      (c) **Reminders** — multi-modal escalation per Section 8.1: in-app pulse →
           push notification → push requiring acknowledgement. Expo push token on
           `users.push_token`, server-side fire via `EXPO_ACCESS_TOKEN`.
-      (c) **Gamification** — micro-win points on start AND done, daily streak,
-          per-project progress bars with gentle idle decay (never punitive).
-          `gamification_state` table is already in the schema (Phase 1) — wire
-          it up here.
 - [ ] Phase 7 — daily closed-loop briefing + body doubling

@@ -30,6 +30,14 @@ export interface NextActionResponse {
   up_next: TaskOut[];
 }
 
+export interface GamificationOut {
+  user_id: number;
+  points: number;
+  current_streak: number;
+  longest_streak: number;
+  last_action_at: string | null;
+}
+
 async function jsonRequest<T>(
   path: string,
   init: RequestInit = {},
@@ -65,5 +73,8 @@ export const api = {
     return jsonRequest<NextActionResponse>(`/tasks/${taskId}/done`, {
       method: 'POST',
     });
+  },
+  getGamification(ownerId: number): Promise<GamificationOut> {
+    return jsonRequest<GamificationOut>(`/gamification?owner_id=${ownerId}`);
   },
 };

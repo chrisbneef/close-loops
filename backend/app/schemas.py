@@ -183,6 +183,18 @@ class WeeklyReport(BaseModel):
     rows: list[ReportRow] = Field(default_factory=list, description="All completed tasks in the window, newest first.")
 
 
+class GamificationOut(BaseModel):
+    """Current state of the user's micro-win counter + streak."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: int
+    points: int
+    current_streak: int
+    longest_streak: int
+    last_action_at: Optional[datetime] = None
+
+
 class IngestResponse(BaseModel):
     project_id: Optional[int]
     owner_id: int
