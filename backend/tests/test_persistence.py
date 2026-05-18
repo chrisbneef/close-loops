@@ -96,3 +96,116 @@ def test_only_touches_blocks_for_this_owner(session, cofounders):
     session.commit()
     assert counts == {"inserted": 0, "updated": 0, "deleted": 0, "skipped_locked": 0}
     assert session.query(models.CalendarBlock).filter_by(task_id=c_task.id).count() == 1
+
+
+# --- provider mirror tests (Phase 4) ---
+
+class _FakeProvider:
+    """Records every call so tests can assert the mirror happened correctly."""
+
+    def __init__(self):
+        self.created: list[dict] = []
+        self.updated: list[dict] = []
+        self.deleted: list[str] = []
+        self._next_id = 0
+
+    def free_slots(self, *_args, **_kwargs):
+        return []
+
+    def create_event(self, *, start, end, title, task_id) -> str:
+        self._next_id += 1
+        event_id = f"gcal-{self._next_id}"
+        self.created.append({"event_id": event_id, "task_id": task_id, "title": title, "start": start, "end": end})
+        return event_id
+
+    def update_event(self, *, event_id, start, end, title) -> None:
+        self.updated.append({"event_id": event_id, "title": title, "start": start, "end": end})
+
+    def delete_event(self, *, event_id) -> None:
+        self.deleted.append(event_id)
+
+
+def test_insert_mirrors_to_provider_and_stores_event_id(session, cofounders):
+    michael, _ = cofounders
+    tasks = _seed_tasks(session, michael, 2)
+    provider = _FakeProvider()
+
+    apply_diff_for_owner(
+        session, michael.id,
+        [_block(tasks[0].id, 0), _block(tasks[1].id, 30)],
+        provider=provider,
+    )
+    session.commit()
+
+    assert len(provider.created) == 2
+    rows = session.query(models.CalendarBlock).all()
+    for row in rows:
+        assert row.gcal_event_id is not None
+        assert row.gcal_event_id.startswith("gcal-")
+
+
+def test_update_mirrors_to_provider_with_existing_event_id(session, cofounders):
+    michael, _ = cofounders
+    tasks = _seed_tasks(session, michael, 1)
+    provider = _FakeProvider()
+
+    apply_diff_for_owner(session, michael.id, [_block(tasks[0].id, 0)], provider=provider)
+    session.commit()
+
+    # Move the block — should mirror as update_event, not create_event.
+    apply_diff_for_owner(session, michael.id, [_block(tasks[0].id, 60)], provider=provider)
+    session.commit()
+
+    assert len(provider.created) == 1  # the original
+    assert len(provider.updated) == 1
+    assert provider.updated[0]["event_id"] == provider.created[0]["event_id"]
+
+
+def test_delete_mirrors_to_provider(session, cofounders):
+    michael, _ = cofounders
+    tasks = _seed_tasks(session, michael, 1)
+    provider = _FakeProvider()
+
+    apply_diff_for_owner(session, michael.id, [_block(tasks[0].id, 0)], provider=provider)
+    session.commit()
+    event_id = provider.created[0]["event_id"]
+
+    # Empty proposal → DB delete + mirror delete.
+    apply_diff_for_owner(session, michael.id, [], provider=provider)
+    session.commit()
+
+    assert provider.deleted == [event_id]
+    assert session.query(models.CalendarBlock).count() == 0
+
+
+def test_update_skips_mirror_when_no_event_id_stored(session, cofounders):
+    """Earlier create_event failed → row has no gcal_event_id. Subsequent
+    update shouldn't try to update_event with a missing id."""
+    michael, _ = cofounders
+    tasks = _seed_tasks(session, michael, 1)
+    # Persist the row directly with no gcal_event_id (simulates create_event failure).
+    session.add(models.CalendarBlock(
+        task_id=tasks[0].id, start=NOW, end=NOW + timedelta(minutes=25), gcal_event_id=None
+    ))
+    session.commit()
+
+    provider = _FakeProvider()
+    apply_diff_for_owner(session, michael.id, [_block(tasks[0].id, 60)], provider=provider)
+    session.commit()
+    assert provider.updated == []  # no upstream update attempted
+
+
+def test_provider_error_does_not_block_db_insert(session, cofounders):
+    """Network blip during create_event shouldn't fail the whole tick."""
+    michael, _ = cofounders
+    tasks = _seed_tasks(session, michael, 1)
+
+    class FlakyProvider(_FakeProvider):
+        def create_event(self, **kwargs):
+            raise RuntimeError("transient google failure")
+
+    apply_diff_for_owner(session, michael.id, [_block(tasks[0].id, 0)], provider=FlakyProvider())
+    session.commit()
+
+    row = session.query(models.CalendarBlock).one()
+    assert row.gcal_event_id is None  # we tried, it failed, row exists without an upstream id

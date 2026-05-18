@@ -54,6 +54,10 @@ class User(Base):
     push_token: Mapped[Optional[str]] = mapped_column(String(255))
     # 24 hourly weights 0..1 — circadian load penalty input for the scheduler.
     energy_curve: Mapped[Optional[list]] = mapped_column(JSON)
+    # Google OAuth (Phase 4) — email is the lookup key matching the OAuth grant;
+    # google_refresh_token is what we exchange for short-lived access tokens.
+    email: Mapped[Optional[str]] = mapped_column(String(255), unique=True)
+    google_refresh_token: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False

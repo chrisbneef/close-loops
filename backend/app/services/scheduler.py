@@ -19,6 +19,16 @@ from app.services import momentum, priority, persistence
 from app.services.calendar_provider import CalendarProvider, StubCalendarProvider
 from app.services.packer import ScheduledBlock, TaskCandidate, pack
 
+
+def provider_for_user(user: User) -> CalendarProvider:
+    """Pick the right calendar backend for this user. If they've connected
+    Google, talk to Google. Otherwise the stub keeps things working."""
+    if user.google_refresh_token:
+        # Imported lazily so test envs without google libs still work.
+        from app.services.google_calendar import GoogleCalendarProvider
+        return GoogleCalendarProvider(refresh_token=user.google_refresh_token)
+    return StubCalendarProvider()
+
 DEFAULT_HORIZON_DAYS = 14
 ACTIVE_STATUSES = ("pending", "scheduled", "in_progress")
 
@@ -142,7 +152,7 @@ def pack_for_owner(
             )
         )
 
-    provider = calendar or StubCalendarProvider()
+    provider = calendar or provider_for_user(owner)
     slots = provider.free_slots(
         owner.timezone or "UTC",
         start=now,
@@ -170,14 +180,17 @@ def apply_schedule_for_owner(
 ) -> tuple[list[ScheduledBlock], list[int], dict[str, int]]:
     """Pack + persist for one owner. Returns (blocks, unscheduled_ids, diff_counts).
 
+    Mirrors writes to Google Calendar if the owner has a refresh_token set.
     Caller commits."""
+    owner = session.get(User, owner_id)
+    provider = calendar or provider_for_user(owner)
     blocks, unscheduled = pack_for_owner(
         session,
         owner_id,
         now=now,
         horizon_days=horizon_days,
-        calendar=calendar,
+        calendar=provider,
         daily_capacity_minutes=daily_capacity_minutes,
     )
-    counts = persistence.apply_diff_for_owner(session, owner_id, blocks)
+    counts = persistence.apply_diff_for_owner(session, owner_id, blocks, provider=provider)
     return blocks, unscheduled, counts

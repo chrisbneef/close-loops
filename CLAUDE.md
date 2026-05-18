@@ -115,6 +115,26 @@ PYTHONPATH=. pytest tests/
   the calendar in the same request, not 60s later. The synchronous tick adds maybe
   100-300ms to /ingest latency for two cofounders; if it ever gets slow we can move to
   background-thread or asyncio.create_task. Until then, the simplicity is worth it.
+- **Direct Google OAuth, not MCP (Phase 4 architecture pivot).** The spec recommended
+  Composio (or the official Google MCP server) as a brokered OAuth path. We chose
+  direct Google OAuth instead: shorter data path (you ↔ Google only), no per-call
+  vendor cost, no third-party in the consent screen, and an Internal Workspace OAuth
+  app skips Google's verification process entirely (no test-user list, no 100-user cap,
+  no scary "unverified app" warning). Trade-off: ~5 hrs of OAuth + Calendar API
+  integration code vs. ~1 hr for Composio. Worth it for a SaaS-grade architecture from
+  day one — if Cadence ever ships externally, the same code switches from Internal to
+  External and goes through Google's app verification (sensitive Calendar scopes, no
+  third-party security audit needed).
+- **PKCE code_verifier travels inside the signed state token.** Google's OAuth flow
+  requires PKCE: `/start` generates a `code_verifier`, sends `code_challenge` to
+  Google, and `/callback` must present the verifier on token exchange. Since each
+  route creates a fresh `Flow` instance, we encode the verifier in the HMAC-signed
+  `state` so the callback can recover it. This is safe for a confidential client —
+  the client_secret is what really authenticates us; PKCE here is just a Google-
+  required protocol step.
+- **DATABASE_URL prefix is auto-normalized.** SQLAlchemy 2.x defaults `postgresql://`
+  to the psycopg2 driver, which we don't install. `app/config.py` rewrites the prefix
+  to `postgresql+psycopg://` (psycopg3) so users can paste Supabase URLs as-is.
 
 ## Phase status
 - [x] Phase 0 — env setup
@@ -184,8 +204,27 @@ PYTHONPATH=. pytest tests/
 
       **Test conftest disables `enable_scheduler_loop`** so pytest never races with a
       background tick.
-- [ ] Phase 4 — Google Calendar via MCP (swap StubCalendarProvider for the real one)
-- [ ] Phase 4 — Google Calendar via MCP
+- [x] Phase 4 — Google Calendar via direct OAuth (NOT MCP — see Deviations):
+      Each `User` gets `email` + `google_refresh_token` columns (Alembic 0002).
+      [app/routers/oauth.py](backend/app/routers/oauth.py) hosts `/oauth/google/start`
+      and `/callback` with PKCE — the code_verifier rides inside the HMAC-signed
+      `state` (confidential-client safe; client_secret is the real auth factor) so
+      the callback can recover it after Google's redirect round trip.
+      [app/services/google_calendar.py](backend/app/services/google_calendar.py)
+      reads real events via `events.list`, skips its own `cadence_block`-tagged
+      events, subtracts the rest from the work-hours skeleton, and writes new
+      events with `extendedProperties.private.cadence_block: "true"` so the user's
+      real meetings are never touched. [app/services/scheduler.py](backend/app/services/scheduler.py)
+      auto-picks `GoogleCalendarProvider` when the owner has a refresh_token,
+      else falls back to `StubCalendarProvider`. [app/services/persistence.py](backend/app/services/persistence.py)
+      mirrors `calendar_blocks` writes upstream (insert→`events.insert`,
+      update→`events.patch`, delete→`events.delete`) and stores the returned
+      `event_id` on each row. 16 new tests (97 total). Live demo: 26 events on
+      Michael's calendar + 6 on Chris's, all `cadence_block`-tagged, dependency-
+      ordered, dropped into actual work-hour slots.
+- [ ] Phase 4.1 — migrate from SQLite to Supabase Postgres (alembic upgrade against
+      the new URL, re-seed cofounders, re-OAuth, re-ingest a goal)
 - [ ] Phase 5 — Now-screen vertical slice (bootstrap Expo here)
+- [ ] Phase 4 — Google Calendar via MCP
 - [ ] Phase 6 — reminders + gamification
 - [ ] Phase 7 — daily closed-loop briefing + body doubling

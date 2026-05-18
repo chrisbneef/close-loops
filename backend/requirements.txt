@@ -10,5 +10,9 @@ httpx>=0.27
 python-dotenv>=1.0
 # Postgres driver — installed but only used when DATABASE_URL points at Postgres.
 psycopg[binary]>=3.2
+# Google Calendar direct OAuth + API (Phase 4).
+google-auth>=2.30
+google-auth-oauthlib>=1.2
+google-api-python-client>=2.140
 # Test deps (kept in main requirements for now; split into requirements-dev.txt later if needed).
 pytest>=8.0

@@ -28,7 +28,17 @@ class FreeSlot:
 
 
 class CalendarProvider(Protocol):
+    """Read free time + push generated blocks to the user's calendar.
+
+    `StubCalendarProvider` no-ops the write methods so dev / tests can run
+    without touching the network. `GoogleCalendarProvider` (Phase 4) actually
+    talks to Google Calendar."""
+
     def free_slots(self, user_timezone: str, *, start: datetime, end: datetime) -> list[FreeSlot]: ...
+
+    def create_event(self, *, start: datetime, end: datetime, title: str, task_id: int) -> str: ...
+    def update_event(self, *, event_id: str, start: datetime, end: datetime, title: str) -> None: ...
+    def delete_event(self, *, event_id: str) -> None: ...
 
 
 # Default work windows (local time): morning + afternoon, weekdays only.
@@ -82,6 +92,17 @@ class StubCalendarProvider:
                         slots.append(FreeSlot(start=s_utc, end=e_utc))
             cursor += timedelta(days=1)
         return slots
+
+    # No-op write methods so the Stub satisfies the CalendarProvider Protocol.
+    # Tests and dev runs that don't have a Google connection get clean no-ops.
+    def create_event(self, *, start: datetime, end: datetime, title: str, task_id: int) -> str:
+        return f"stub-event-{task_id}"
+
+    def update_event(self, *, event_id: str, start: datetime, end: datetime, title: str) -> None:
+        return None
+
+    def delete_event(self, *, event_id: str) -> None:
+        return None
 
 
 def _as_utc(dt: datetime) -> datetime:
