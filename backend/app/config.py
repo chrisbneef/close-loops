@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     google_oauth_redirect_uri: str = "http://localhost:8000/oauth/google/callback"
 
     slack_webhook_url: str = ""
+    slack_signing_secret: str = ""  # verifies /loop slash-command requests
     expo_access_token: str = ""
 
     sched_alpha: float = 1.0

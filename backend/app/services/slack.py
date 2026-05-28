@@ -7,7 +7,10 @@ fully populated.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
+import time
 
 import httpx
 
@@ -18,6 +21,43 @@ logger = logging.getLogger(__name__)
 
 class SlackError(RuntimeError):
     """Webhook delivery failed (HTTP error or Slack rejected the payload)."""
+
+
+def verify_slack_signature(
+    *, request_body: bytes, timestamp: str, signature: str,
+    signing_secret: str | None = None, max_age_seconds: int = 300,
+) -> bool:
+    """Verify a Slack request signature (slash commands, events).
+
+    Slack signs: 'v0:{timestamp}:{raw_body}' with HMAC-SHA256 over the signing
+    secret. We also reject requests older than 5 minutes (replay protection).
+    """
+    secret = signing_secret if signing_secret is not None else settings.slack_signing_secret
+    if not secret:
+        # No secret configured — can't verify. Caller decides whether to allow.
+        return False
+    try:
+        if abs(time.time() - int(timestamp)) > max_age_seconds:
+            return False
+    except (ValueError, TypeError):
+        return False
+    basestring = b"v0:" + timestamp.encode() + b":" + request_body
+    expected = "v0=" + hmac.new(secret.encode(), basestring, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature or "")
+
+
+def post_to_response_url(response_url: str, text: str, *, in_channel: bool = True) -> None:
+    """Post a follow-up message to a slash command's response_url. Used after
+    the immediate ack to deliver the (slower) decomposition result."""
+    payload = {
+        "response_type": "in_channel" if in_channel else "ephemeral",
+        "text": text,
+    }
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            client.post(response_url, json=payload).raise_for_status()
+    except httpx.HTTPError as e:
+        logger.warning("slack response_url post failed: %s", e)
 
 
 def post_message(text: str, *, webhook_url: str | None = None, timeout_seconds: float = 10.0) -> bool:

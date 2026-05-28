@@ -16,7 +16,7 @@ import anthropic
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Project, Task, TaskDependency, User
+from app.models import Project, Task, TaskDependency, TaskSubtask, User
 from app.schemas import IngestResponse, LLMDecomposition, LLMTask, TaskOut
 from app.services import cycles, llm, reschedule, temporal
 
@@ -126,6 +126,10 @@ def ingest(
         session.flush()  # populate task.id
         title_to_id[ltask.title] = task.id
         inserted.append(task)
+
+        # Persist any LLM-generated SOP subtasks as a checklist on the task.
+        for position, step in enumerate(ltask.subtasks):
+            session.add(TaskSubtask(task_id=task.id, position=position, title=step))
 
     dependency_edges: list[tuple[int, int]] = []
     for src_title, dst_title in accepted_title_edges:

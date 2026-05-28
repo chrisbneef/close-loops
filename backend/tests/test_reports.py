@@ -13,7 +13,10 @@ from app import models
 from app.db import Base, get_session
 from app.main import app
 
-NOW = datetime(2026, 5, 18, 12, 0, tzinfo=timezone.utc)
+# Anchored to real now (not a fixed calendar date): the /reports/weekly default
+# window is [now-7d, now] off the real clock, so a hardcoded past date silently
+# falls out of the window once the machine clock advances past it.
+NOW = datetime.now(timezone.utc)
 
 
 @pytest.fixture

@@ -65,6 +65,12 @@ A single JSON object matching the LLMDecomposition schema:
         (different expertise, currently owns that surface area). Use
         "contractor" only when the task is mechanical and high-volume
         (mass data entry, video editing) — never for strategic work.
+      - `subtasks`: SOP checklist steps for this task — ONLY when it's a
+        mechanical multi-step process where spelling out the steps reduces
+        initiation friction. "Edit the demo video" → ["Cut to 90s", "Add
+        captions", "Export 1080p", "Upload to YouTube", "Share link with
+        team"]. Leave EMPTY for atomic tasks ("Send the follow-up email").
+        Don't manufacture steps for the sake of it. Max ~6 steps.
   - `goal_deadline`: see DEADLINE EXTRACTION below.
 
 DEADLINE EXTRACTION

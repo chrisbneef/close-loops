@@ -38,6 +38,18 @@ class LLMTask(BaseModel):
             "'partner' = the other co-founder; 'contractor' = needs to be hired/delegated outside the team."
         ),
     )
+    subtasks: list[str] = Field(
+        default_factory=list,
+        max_length=8,
+        description=(
+            "SOP-style checklist steps for THIS task — ONLY when the task is a "
+            "mechanical multi-step process where listing the steps reduces "
+            "initiation friction (e.g. 'Edit the demo video' → ['Cut to 90s', "
+            "'Add captions', 'Export 1080p', 'Upload to YouTube', 'Share link']). "
+            "Leave EMPTY for simple atomic tasks ('Send the follow-up email') — "
+            "don't manufacture steps. Each step is a short imperative phrase."
+        ),
+    )
 
 
 class LLMDecomposition(BaseModel):
@@ -74,6 +86,61 @@ class IngestRequest(BaseModel):
     )
 
 
+class TaskCreate(BaseModel):
+    """Manual single-task add (the widget's +task button). For messy multi-step
+    goals, use POST /ingest instead — that runs the LLM decomposition."""
+
+    title: str = Field(..., min_length=1, max_length=255)
+    owner_id: int
+    est_minutes: int = Field(25, ge=5, le=480)
+    importance: int = Field(5, ge=1, le=10)
+    deadline: Optional[datetime] = None
+
+
+class PauseRequest(BaseModel):
+    reason: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Why are you pausing? Free text, captured for weekly stats.",
+    )
+
+
+class InterruptionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    task_id: int
+    user_id: int
+    paused_at: datetime
+    resumed_at: Optional[datetime] = None
+    reason: str
+
+
+class SubtaskOut(BaseModel):
+    """One SOP-style checklist item under a task."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    task_id: int
+    position: int
+    title: str
+    completed: bool
+    completed_at: Optional[datetime] = None
+
+
+class SubtaskCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    position: Optional[int] = Field(None, description="If omitted, appended at the end.")
+
+
+class SubtaskUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=255)
+    completed: Optional[bool] = None
+    position: Optional[int] = None
+
+
 class TaskOut(BaseModel):
     """Slim task representation in API responses."""
 
@@ -88,6 +155,28 @@ class TaskOut(BaseModel):
     importance: int
     status: str
     deadline: Optional[datetime] = None
+    # Timestamps for richer board cards ("started 12m ago", done time). Additive.
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    subtasks: list[SubtaskOut] = Field(default_factory=list)
+
+
+class TaskUpdate(BaseModel):
+    """Generic field/status patch for a task (Kanban click-to-move + edits).
+
+    Only neutral/backward status moves ('pending'/'scheduled') are accepted here;
+    forward transitions (in_progress/paused/done) must use the dedicated
+    /start, /pause, /done endpoints so their side effects fire."""
+
+    title: Optional[str] = Field(None, min_length=1, max_length=255)
+    importance: Optional[int] = Field(None, ge=1, le=10)
+    est_minutes: Optional[int] = Field(None, ge=5, le=480)
+    deadline: Optional[datetime] = None
+    status: Optional[Literal["pending", "scheduled"]] = Field(
+        None,
+        description="Only backward/neutral moves. Use /start, /pause, /done for the rest.",
+    )
 
 
 class ScheduledBlockOut(BaseModel):

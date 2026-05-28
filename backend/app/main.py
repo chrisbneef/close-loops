@@ -4,7 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import (
-    briefing, gamification, ingest, now, oauth, presence, reports, schedule, users,
+    briefing, gamification, ingest, now, oauth, presence, reports, schedule,
+    slack, subtasks, tasks, users,
 )
 from app.services import reminder_loop, scheduler_loop
 
@@ -42,6 +43,9 @@ app.include_router(gamification.router)
 app.include_router(users.router)
 app.include_router(briefing.router)
 app.include_router(presence.router)
+app.include_router(subtasks.router)
+app.include_router(tasks.router)
+app.include_router(slack.router)
 
 
 @app.get("/health")

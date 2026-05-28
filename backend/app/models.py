@@ -37,7 +37,7 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-TASK_STATUSES = ("pending", "scheduled", "in_progress", "done", "decayed")
+TASK_STATUSES = ("pending", "scheduled", "in_progress", "paused", "done", "decayed")
 PROJECT_STATUSES = ("active", "paused", "done", "archived")
 PRESENCE_STATUSES = ("focusing", "idle", "offline")
 USER_ROLES = ("cofounder", "team", "contractor")
@@ -58,6 +58,8 @@ class User(Base):
     # google_refresh_token is what we exchange for short-lived access tokens.
     email: Mapped[Optional[str]] = mapped_column(String(255), unique=True)
     google_refresh_token: Mapped[Optional[str]] = mapped_column(Text)
+    # Slack slash-command intake — maps the Slack user running /loop to this row.
+    slack_user_id: Mapped[Optional[str]] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
@@ -221,6 +223,47 @@ class Presence(Base):
     )
 
     __table_args__ = (CheckConstraint(f"status IN {PRESENCE_STATUSES!r}", name="ck_presence_status"),)
+
+
+class Interruption(Base):
+    """One pause/resume cycle on a task. Created when the user hits Pause on
+    the widget; `resumed_at` populated when they hit Resume (NULL means
+    they're still paused). The `reason` text captures *why* — the widget
+    prompts for it — so the weekly report can roll up patterns ("you were
+    interrupted 8 times this week — top reasons: slack ping, kid, coffee")."""
+
+    __tablename__ = "interruptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    paused_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    resumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+
+    __table_args__ = (
+        Index("ix_interruptions_user", "user_id", "paused_at"),
+        Index("ix_interruptions_task", "task_id"),
+    )
+
+
+class TaskSubtask(Base):
+    """SOP-style checklist item within a single Task. Subtasks aren't separately
+    scheduled — they're tickable steps under their parent task on the Now / widget
+    surface. Example: 'Edit Google ad video' has subtasks [cut video, upload to
+    YouTube, share link with Michael, upload to Drive]."""
+
+    __tablename__ = "task_subtasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    __table_args__ = (Index("ix_task_subtasks_task", "task_id", "position"),)
 
 
 class ExecutionLog(Base):
