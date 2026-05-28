@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import settings
 from app.routers import (
     briefing, gamification, ingest, now, oauth, presence, reports, schedule,
     slack, subtasks, tasks, users,
@@ -23,13 +24,17 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Cadence Brain", version="0.5.0", lifespan=lifespan)
 
-# CORS — the Expo web/dev target serves from a different origin (typically
-# http://localhost:8081 or an exp:// URL), so the browser blocks API calls
-# without these headers. Wide-open for dev; tighten for production.
+# CORS — the Expo web/dashboard/widget surfaces serve from a different origin
+# (dev: http://localhost:8081; the Tauri widget: tauri://localhost; prod: the
+# deployed web origin). Configurable via CORS_ALLOW_ORIGINS (comma-separated);
+# defaults to "*" for dev. Credentials are only allowed when origins are
+# explicitly listed — the CORS spec forbids "*" + credentials together.
+_cors_origins = settings.cors_origins_list
+_allow_all = _cors_origins == ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=_cors_origins,
+    allow_credentials=not _allow_all,
     allow_methods=["*"],
     allow_headers=["*"],
 )

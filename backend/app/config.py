@@ -25,6 +25,15 @@ class Settings(BaseSettings):
     slack_signing_secret: str = ""  # verifies /loop slash-command requests
     expo_access_token: str = ""
 
+    # CORS — comma-separated allowed origins for the web/dashboard/widget
+    # surfaces. Defaults to "*" (dev). In production set this to the deployed
+    # web origins, e.g. "https://app.closeyourloops.com,tauri://localhost".
+    cors_allow_origins: str = "*"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]
+
     sched_alpha: float = 1.0
     sched_beta: float = 1.0
     sched_gamma: float = 0.5
