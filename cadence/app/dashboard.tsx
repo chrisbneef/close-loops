@@ -98,7 +98,7 @@ export default function DashboardScreen() {
 }
 
 function KanbanBoard({ tasks, ownerId }: { tasks: TaskOut[]; ownerId: 1 | 2 }) {
-  const buckets: Record<string, TaskOut[]> = { up_next: [], in_progress: [], paused: [], done: [] };
+  const buckets: Record<string, TaskOut[]> = Object.fromEntries(COLUMNS.map((col) => [col.key, []]));
   for (const task of tasks) buckets[columnFor(task.status)].push(task);
 
   return (
@@ -126,7 +126,7 @@ function KanbanBoard({ tasks, ownerId }: { tasks: TaskOut[]; ownerId: 1 | 2 }) {
 }
 
 function ListView({ tasks, ownerId }: { tasks: TaskOut[]; ownerId: 1 | 2 }) {
-  const buckets: Record<string, TaskOut[]> = { up_next: [], in_progress: [], paused: [], done: [] };
+  const buckets: Record<string, TaskOut[]> = Object.fromEntries(COLUMNS.map((col) => [col.key, []]));
   for (const task of tasks) buckets[columnFor(task.status)].push(task);
 
   return (
