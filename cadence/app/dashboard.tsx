@@ -10,10 +10,11 @@
  */
 
 import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 
 import { api, type TaskOut } from '@/src/api';
+import { useAuth } from '@/src/auth-store';
 import { OwnerSwitcher } from '@/src/components/OwnerSwitcher';
 import { TaskCard } from '@/src/components/TaskCard';
 import { COLUMNS, columnFor } from '@/src/components/move-task';
@@ -24,7 +25,9 @@ import {
 type ViewMode = 'kanban' | 'list';
 
 export default function DashboardScreen() {
-  const [ownerId, setOwnerId] = useState<1 | 2>(1);
+  const authUserId = useAuth((s) => s.user?.id ?? 1) as 1 | 2;
+  const logout = useAuth((s) => s.logout);
+  const [ownerId, setOwnerId] = useState<1 | 2>(authUserId);
   const [view, setView] = useState<ViewMode>('kanban');
 
   const tasksQuery = useQuery({
@@ -55,6 +58,9 @@ export default function DashboardScreen() {
             <ViewTab label="KANBAN" on={view === 'kanban'} onPress={() => setView('kanban')} />
             <ViewTab label="LIST" on={view === 'list'} onPress={() => setView('list')} />
           </View>
+          <Pressable onPress={() => logout()} hitSlop={6}>
+            <Text style={s.signOut}>SIGN OUT</Text>
+          </Pressable>
         </View>
       </View>
 
@@ -182,6 +188,7 @@ const s = StyleSheet.create({
     paddingVertical: sp.xs,
   },
   viewTabOn: { backgroundColor: c.surface, color: c.accent },
+  signOut: { ...t.duration, color: c.textFaint },
 
   body: { flex: 1, flexDirection: 'row' },
   main: { flex: 1, padding: sp.lg },

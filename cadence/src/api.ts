@@ -7,8 +7,24 @@
  *   EXPO_PUBLIC_API_BASE=http://192.168.1.42:8000 npx expo start
  */
 
+import { getToken, handleUnauthorized } from '@/src/auth-token';
+
 const API_BASE =
   process.env.EXPO_PUBLIC_API_BASE ?? 'http://localhost:8000';
+
+export interface AuthUser {
+  id: number;
+  name: string;
+  email: string | null;
+  role: string;
+  timezone: string;
+}
+
+export interface LoginResponse {
+  access_token: string;
+  token_type: string;
+  user: AuthUser;
+}
 
 export interface SubtaskOut {
   id: number;
@@ -67,11 +83,21 @@ async function jsonRequest<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
+  const token = getToken();
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
     ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init.headers,
+    },
   });
   if (!res.ok) {
+    // A 401 means the token is missing/expired — bounce to login. Skip the
+    // bounce for the login call itself (bad credentials, not a dead session).
+    if (res.status === 401 && path !== '/auth/login') {
+      handleUnauthorized();
+    }
     let detail = res.statusText;
     try {
       const body = await res.json();
@@ -87,6 +113,17 @@ async function jsonRequest<T>(
 }
 
 export const api = {
+  // -- auth --
+  login(email: string, password: string): Promise<LoginResponse> {
+    return jsonRequest<LoginResponse>(`/auth/login`, {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+  },
+  getMe(): Promise<AuthUser> {
+    return jsonRequest<AuthUser>(`/auth/me`);
+  },
+
   getNextAction(ownerId: number): Promise<NextActionResponse> {
     return jsonRequest<NextActionResponse>(`/next-action?owner_id=${ownerId}`);
   },
@@ -140,6 +177,12 @@ export const api = {
   },
   getGamification(ownerId: number): Promise<GamificationOut> {
     return jsonRequest<GamificationOut>(`/gamification?owner_id=${ownerId}`);
+  },
+  setPushToken(ownerId: number, pushToken: string): Promise<void> {
+    return jsonRequest<void>(`/users/${ownerId}/push-token`, {
+      method: 'POST',
+      body: JSON.stringify({ push_token: pushToken }),
+    });
   },
   // Returns null when there's no partner (solo team) or the partner has never
   // had a presence row. jsonRequest treats valid JSON `null` as `null`.

@@ -27,11 +27,12 @@ import {
   type NextActionResponse,
   type PartnerPresence,
 } from '@/src/api';
+import { useAuth } from '@/src/auth-store';
 import { colors, radii, spacing, type } from '@/src/theme';
 import { formatTimer, useTimer } from '@/src/timer-store';
 
-// Dev-only owner switcher. In production this is determined by auth (Supabase
-// Auth — Phase 8). Two cofounders; pick whichever you're testing as.
+// The two cofounders. You log in as one, but the toggle lets you view either
+// board — Cadence is a shared two-person system, not isolated accounts.
 const OWNERS = [
   { id: 1, name: 'Michael' },
   { id: 2, name: 'Chris' },
@@ -40,8 +41,12 @@ const DEFAULT_POMODORO_MIN = 25;
 
 export default function NowScreen() {
   const queryClient = useQueryClient();
+  const authUserId = useAuth((s) => s.user?.id ?? 1) as 1 | 2;
+  const logout = useAuth((s) => s.logout);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [ownerId, setOwnerId] = useState<1 | 2>(1);
+  // Default to the logged-in cofounder's own board; the switcher can view the
+  // partner's.
+  const [ownerId, setOwnerId] = useState<1 | 2>(authUserId);
   const timer = useTimer();
 
   // Poll the brain. 30s staleTime in QueryClient + refetch-on-focus means the
@@ -109,7 +114,12 @@ export default function NowScreen() {
     <SafeAreaView style={s.root}>
       <View style={s.header}>
         <Text style={s.wordmarkText}>cadence</Text>
-        <GameChip data={gamificationQuery.data} />
+        <View style={s.headerRight}>
+          <GameChip data={gamificationQuery.data} />
+          <Pressable onPress={() => logout()} hitSlop={8}>
+            <Text style={s.signOut}>sign out</Text>
+          </Pressable>
+        </View>
       </View>
 
       <OwnerSwitcher active={ownerId} onChange={setOwnerId} />
@@ -310,6 +320,16 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
   },
   wordmarkText: {
+    ...type.micro,
+    color: colors.textFaint,
+    textTransform: 'lowercase',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  signOut: {
     ...type.micro,
     color: colors.textFaint,
     textTransform: 'lowercase',

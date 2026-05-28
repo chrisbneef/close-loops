@@ -12,12 +12,22 @@ The widget is **not** a separate codebase — it's a thin native window that loa
 same `/widget` web route. Ship the web app once; the desktop widget is a downloadable
 wrapper around it.
 
-> **GATING PREREQUISITE — auth.** Every endpoint currently trusts `owner_id` from the
-> query string and the frontend hardcodes `OWNER_ID`/owner toggles. That is fine on
-> localhost but **must not** be exposed publicly as-is — anyone could read/modify either
-> cofounder's tasks. Add real auth (Supabase Auth or a session token → `owner_id` on the
-> server) **before** putting the backend on a public URL. This is the one thing standing
-> between "works on our laptops" and "deployable." It is intentionally not built yet.
+> **Auth (Phase 8) — built.** Login is required: `POST /auth/login` issues a session JWT
+> and every data router is gated by `Depends(get_current_user)`; `auth`/`oauth`/`slack`/
+> `health` stay public. The frontend shows a login screen and gates all surfaces (Now /
+> dashboard / widget) behind it. Auth gates the **two-person team** (only the seeded
+> accounts can touch the API) rather than isolating per user — the shared board, partner
+> presence, and cross-owner delegation all need cross-visibility.
+>
+> Production checklist for auth:
+> - Set a strong **`AUTH_SECRET`** (≥32 bytes) per environment — login 503s without it,
+>   and rotating it invalidates all existing sessions.
+> - Seed each user's password once with `backend/scripts/set_password.py`
+>   (`EMAIL=… PASSWORD=… PYTHONPATH=. .venv/bin/python scripts/set_password.py`).
+> - Tokens are long-lived (`AUTH_TOKEN_TTL_DAYS`, default 30) and have no server-side
+>   revocation list — fine for a 2-person internal tool. If you need instant kill-switch
+>   revocation later, add a token-version column to `users` and check it in
+>   `app/security.py`.
 
 ---
 

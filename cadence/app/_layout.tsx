@@ -1,7 +1,9 @@
 /**
- * Root layout. Loads custom fonts behind the splash screen, mounts the
- * QueryClient for server state, and renders the single Stack screen
- * (Now is the only screen for Phase 5; Today/Week/Momentum/Together come later).
+ * Root layout. Loads custom fonts + hydrates the auth session behind the splash
+ * screen, mounts the QueryClient, and gates every app surface behind login via
+ * Stack.Protected: when there's no token the only reachable screen is /login;
+ * once a token exists the Now / dashboard / widget screens unlock and the
+ * router routes into the app automatically.
  */
 
 import { useEffect } from 'react';
@@ -29,10 +31,9 @@ import {
 } from '@expo-google-fonts/sora';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+import { useAuth } from '@/src/auth-store';
 import { registerForPush } from '@/src/notifications';
 import { colors } from '@/src/theme';
-
-const OWNER_ID = 1; // matches the Now screen's hardcoded owner; replace with auth later
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -61,19 +62,31 @@ export default function RootLayout() {
     Sora_700Bold,
   });
 
-  useEffect(() => {
-    if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
-  }, [fontsLoaded]);
+  const hydrated = useAuth((s) => s.hydrated);
+  const hydrate = useAuth((s) => s.hydrate);
+  const userId = useAuth((s) => s.user?.id ?? null);
+  const isAuthed = useAuth((s) => !!s.token);
 
-  // Fire-and-forget push registration. Web/simulators silently bail; real
-  // device users see one permission prompt on first launch.
+  // Read the stored token back once on launch.
   useEffect(() => {
-    registerForPush(OWNER_ID).catch((e) =>
+    void hydrate();
+  }, [hydrate]);
+
+  const ready = fontsLoaded && hydrated;
+  useEffect(() => {
+    if (ready) SplashScreen.hideAsync().catch(() => {});
+  }, [ready]);
+
+  // Register for push only once we know who's logged in. Web/simulators bail
+  // silently; real devices see one permission prompt.
+  useEffect(() => {
+    if (userId == null) return;
+    registerForPush(userId).catch((e) =>
       console.warn('push registration error:', e),
     );
-  }, []);
+  }, [userId]);
 
-  if (!fontsLoaded) return null;
+  if (!ready) return null;
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -83,7 +96,16 @@ export default function RootLayout() {
           headerShown: false,
           contentStyle: { backgroundColor: colors.bg },
         }}
-      />
+      >
+        <Stack.Protected guard={isAuthed}>
+          <Stack.Screen name="index" />
+          <Stack.Screen name="dashboard" />
+          <Stack.Screen name="widget" />
+        </Stack.Protected>
+        <Stack.Protected guard={!isAuthed}>
+          <Stack.Screen name="login" />
+        </Stack.Protected>
+      </Stack>
     </QueryClientProvider>
   );
 }

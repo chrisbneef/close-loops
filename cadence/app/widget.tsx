@@ -32,6 +32,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   api, type NextActionResponse, type SubtaskOut, type TaskOut,
 } from '@/src/api';
+import { useAuth } from '@/src/auth-store';
 import { formatTimer, useTimer } from '@/src/timer-store';
 import {
   WIDGET_MAX_WIDTH, widgetColors as c, widgetRadii as r,
@@ -44,7 +45,8 @@ const OWNERS = [
 ] as const;
 
 export default function WidgetScreen() {
-  const [ownerId, setOwnerId] = useState<1 | 2>(1);
+  const authUserId = useAuth((s) => s.user?.id ?? 1) as 1 | 2;
+  const [ownerId, setOwnerId] = useState<1 | 2>(authUserId);
   const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
   const [collapsed, setCollapsed] = useState(false);
 

@@ -17,8 +17,7 @@ import { Platform } from 'react-native';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 
-const API_BASE =
-  process.env.EXPO_PUBLIC_API_BASE ?? 'http://localhost:8000';
+import { api } from '@/src/api';
 
 // Show notifications in-foreground too (otherwise iOS swallows them silently
 // when the app is open). Set once at module load.
@@ -51,11 +50,9 @@ export async function registerForPush(ownerId: number): Promise<string | null> {
   if (!token) return null;
 
   try {
-    await fetch(`${API_BASE}/users/${ownerId}/push-token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ push_token: token }),
-    });
+    // Goes through the api wrapper so it carries the auth token (the /users
+    // route is gated). Called post-login, so the token is present.
+    await api.setPushToken(ownerId, token);
   } catch (e) {
     // Brain unreachable — phone still has the token; we'll re-POST on next launch.
     console.warn('failed to register push token with brain:', e);
