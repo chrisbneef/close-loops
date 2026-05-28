@@ -10,6 +10,18 @@
 const API_BASE =
   process.env.EXPO_PUBLIC_API_BASE ?? 'http://localhost:8000';
 
+export interface SubtaskOut {
+  id: number;
+  task_id: number;
+  position: number;
+  title: string;
+  completed: boolean;
+  completed_at: string | null;
+}
+
+export type TaskStatus =
+  | 'pending' | 'scheduled' | 'in_progress' | 'paused' | 'done' | 'decayed';
+
 export interface TaskOut {
   id: number;
   title: string;
@@ -18,8 +30,12 @@ export interface TaskOut {
   delegator_id: number | null;
   est_minutes: number;
   importance: number;
-  status: string;
+  status: TaskStatus;
   deadline: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string | null;
+  subtasks: SubtaskOut[];
 }
 
 export interface NextActionResponse {
@@ -74,8 +90,47 @@ export const api = {
   getNextAction(ownerId: number): Promise<NextActionResponse> {
     return jsonRequest<NextActionResponse>(`/next-action?owner_id=${ownerId}`);
   },
+  createTask(
+    ownerId: number, title: string, estMinutes?: number, importance?: number,
+  ): Promise<TaskOut> {
+    return jsonRequest<TaskOut>(`/tasks`, {
+      method: 'POST',
+      body: JSON.stringify({
+        owner_id: ownerId,
+        title,
+        ...(estMinutes ? { est_minutes: estMinutes } : {}),
+        ...(importance ? { importance } : {}),
+      }),
+    });
+  },
+  // All of an owner's board-visible tasks (every status but decayed), subtasks
+  // embedded. Done tasks capped to the recent window server-side.
+  listTasks(ownerId: number, doneWithinDays?: number): Promise<TaskOut[]> {
+    const q = doneWithinDays !== undefined ? `&done_within_days=${doneWithinDays}` : '';
+    return jsonRequest<TaskOut[]>(`/tasks?owner_id=${ownerId}${q}`);
+  },
+  // Generic edit + backward/neutral status move (Kanban). Forward moves
+  // (in_progress/paused/done) must use start/pause/done — server 409s otherwise.
+  patchTask(
+    taskId: number,
+    fields: Partial<{ title: string; importance: number; est_minutes: number; deadline: string; status: 'pending' | 'scheduled' }>,
+  ): Promise<TaskOut> {
+    return jsonRequest<TaskOut>(`/tasks/${taskId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(fields),
+    });
+  },
   startTask(taskId: number): Promise<void> {
     return jsonRequest<void>(`/tasks/${taskId}/start`, { method: 'POST' });
+  },
+  pauseTask(taskId: number, reason: string): Promise<void> {
+    return jsonRequest<void>(`/tasks/${taskId}/pause`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+  resumeTask(taskId: number): Promise<TaskOut> {
+    return jsonRequest<TaskOut>(`/tasks/${taskId}/resume`, { method: 'POST' });
   },
   // /done returns the new NextAction so the UI can flip without a second poll.
   completeTask(taskId: number): Promise<NextActionResponse> {
@@ -92,5 +147,25 @@ export const api = {
     return jsonRequest<PartnerPresence | null>(
       `/presence/partner?owner_id=${ownerId}`,
     );
+  },
+
+  // -- subtasks (widget) --
+  listSubtasks(taskId: number): Promise<SubtaskOut[]> {
+    return jsonRequest<SubtaskOut[]>(`/tasks/${taskId}/subtasks`);
+  },
+  createSubtask(taskId: number, title: string, position?: number): Promise<SubtaskOut> {
+    return jsonRequest<SubtaskOut>(`/tasks/${taskId}/subtasks`, {
+      method: 'POST',
+      body: JSON.stringify({ title, ...(position !== undefined ? { position } : {}) }),
+    });
+  },
+  toggleSubtask(taskId: number, subtaskId: number, completed: boolean): Promise<SubtaskOut> {
+    return jsonRequest<SubtaskOut>(`/tasks/${taskId}/subtasks/${subtaskId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ completed }),
+    });
+  },
+  deleteSubtask(taskId: number, subtaskId: number): Promise<void> {
+    return jsonRequest<void>(`/tasks/${taskId}/subtasks/${subtaskId}`, { method: 'DELETE' });
   },
 };

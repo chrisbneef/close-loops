@@ -1,54 +1,93 @@
 /**
- * Local timer state. The server owns the task lifecycle (pending → in_progress
- * → done) via the start/done endpoints; this store owns the visual countdown
- * the user sees on the Now screen between those state transitions.
+ * Local timer state with pause/resume support.
  *
- * Single source of timer truth: `startedAtMs` — wall-clock ms when the user
- * tapped Start. Elapsed and remaining are derived from `Date.now() - startedAtMs`
- * on each render tick. No drift, no separate paused/resumed state to track
- * (Pomodoro v1 doesn't support pause — push the simple thing first).
+ * Single task at a time. Elapsed time is `accumulatedMs + (currentRunStartMs
+ * → now)`. Pause captures the current run into accumulated and nulls out
+ * currentRunStartMs; resume just sets currentRunStartMs to now. So the timer
+ * picks up where it left off after an interruption — no zero-reset.
+ *
+ * Server is the source of truth for task status; this store is the visual
+ * countdown. Reloads lose timer state (no localStorage rehydration in v1);
+ * the server still has the task at status=in_progress or =paused, so the
+ * widget will re-show the right buttons even if elapsed display starts at 0.
  */
 
 import { create } from 'zustand';
 
 interface TimerState {
   taskId: number | null;
-  startedAtMs: number | null;
+  accumulatedMs: number;
+  currentRunStartMs: number | null;
 
   start: (taskId: number) => void;
+  pause: () => void;
+  resume: () => void;
   reset: () => void;
-  isRunningFor: (taskId: number | null) => boolean;
-  remainingMs: (durationMinutes: number, nowMs: number) => number;
+
+  isActiveFor: (taskId: number | null) => boolean;       // taskId is the one currently in the timer
+  isRunningFor: (taskId: number | null) => boolean;      // active AND not paused
+  isPausedFor: (taskId: number | null) => boolean;       // active AND paused
+
   elapsedMs: (nowMs: number) => number;
+  remainingMs: (durationMinutes: number, nowMs: number) => number;
 }
 
 export const useTimer = create<TimerState>((set, get) => ({
   taskId: null,
-  startedAtMs: null,
+  accumulatedMs: 0,
+  currentRunStartMs: null,
 
-  start: (taskId) => set({ taskId, startedAtMs: Date.now() }),
-  reset: () => set({ taskId: null, startedAtMs: null }),
+  start: (taskId) =>
+    set({ taskId, accumulatedMs: 0, currentRunStartMs: Date.now() }),
+
+  pause: () => {
+    const s = get();
+    if (s.taskId === null || s.currentRunStartMs === null) return;
+    const runElapsed = Date.now() - s.currentRunStartMs;
+    set({
+      accumulatedMs: s.accumulatedMs + runElapsed,
+      currentRunStartMs: null,
+    });
+  },
+
+  resume: () => {
+    const s = get();
+    if (s.taskId === null) return;
+    if (s.currentRunStartMs !== null) return; // already running
+    set({ currentRunStartMs: Date.now() });
+  },
+
+  reset: () => set({ taskId: null, accumulatedMs: 0, currentRunStartMs: null }),
+
+  isActiveFor: (taskId) => {
+    const s = get();
+    return taskId !== null && s.taskId === taskId;
+  },
 
   isRunningFor: (taskId) => {
     const s = get();
-    return s.taskId === taskId && s.startedAtMs !== null;
+    return taskId !== null && s.taskId === taskId && s.currentRunStartMs !== null;
   },
 
-  remainingMs: (durationMinutes, nowMs) => {
+  isPausedFor: (taskId) => {
     const s = get();
-    if (s.startedAtMs === null) return durationMinutes * 60_000;
-    const elapsed = nowMs - s.startedAtMs;
-    return Math.max(0, durationMinutes * 60_000 - elapsed);
+    return taskId !== null && s.taskId === taskId && s.currentRunStartMs === null && s.accumulatedMs > 0;
   },
 
   elapsedMs: (nowMs) => {
     const s = get();
-    if (s.startedAtMs === null) return 0;
-    return nowMs - s.startedAtMs;
+    if (s.taskId === null) return 0;
+    if (s.currentRunStartMs === null) return s.accumulatedMs;
+    return s.accumulatedMs + (nowMs - s.currentRunStartMs);
+  },
+
+  remainingMs: (durationMinutes, nowMs) => {
+    const elapsed = get().elapsedMs(nowMs);
+    return Math.max(0, durationMinutes * 60_000 - elapsed);
   },
 }));
 
-/** Format milliseconds as "MM:SS". Used by the Now screen's countdown display. */
+/** Format milliseconds as "MM:SS". */
 export function formatTimer(ms: number): string {
   const totalSec = Math.max(0, Math.round(ms / 1000));
   const m = Math.floor(totalSec / 60);

@@ -18,6 +18,15 @@ import {
   DMSans_500Medium,
   DMSans_700Bold,
 } from '@expo-google-fonts/dm-sans';
+import {
+  JetBrainsMono_500Medium,
+  JetBrainsMono_700Bold,
+} from '@expo-google-fonts/jetbrains-mono';
+import {
+  Sora_400Regular,
+  Sora_600SemiBold,
+  Sora_700Bold,
+} from '@expo-google-fonts/sora';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { registerForPush } from '@/src/notifications';
@@ -38,11 +47,18 @@ const queryClient = new QueryClient({
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
+    // Mobile Now screen — warm minimalism
     Fraunces_500Medium,
     Fraunces_700Bold,
     DMSans_400Regular,
     DMSans_500Medium,
     DMSans_700Bold,
+    // Widget surface — gamer/HUD direction
+    JetBrainsMono_500Medium,
+    JetBrainsMono_700Bold,
+    Sora_400Regular,
+    Sora_600SemiBold,
+    Sora_700Bold,
   });
 
   useEffect(() => {

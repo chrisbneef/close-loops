@@ -30,31 +30,37 @@ import {
 import { colors, radii, spacing, type } from '@/src/theme';
 import { formatTimer, useTimer } from '@/src/timer-store';
 
-const OWNER_ID = 1; // Michael — dev-only constant; replace with auth in Phase 6+
+// Dev-only owner switcher. In production this is determined by auth (Supabase
+// Auth — Phase 8). Two cofounders; pick whichever you're testing as.
+const OWNERS = [
+  { id: 1, name: 'Michael' },
+  { id: 2, name: 'Chris' },
+] as const;
 const DEFAULT_POMODORO_MIN = 25;
 
 export default function NowScreen() {
   const queryClient = useQueryClient();
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [ownerId, setOwnerId] = useState<1 | 2>(1);
   const timer = useTimer();
 
   // Poll the brain. 30s staleTime in QueryClient + refetch-on-focus means the
   // card stays current when the scheduler reorders things.
   const nextActionQuery = useQuery({
-    queryKey: ['next-action', OWNER_ID],
-    queryFn: () => api.getNextAction(OWNER_ID),
+    queryKey: ['next-action', ownerId],
+    queryFn: () => api.getNextAction(ownerId),
     refetchInterval: 30_000,
   });
 
   const gamificationQuery = useQuery({
-    queryKey: ['gamification', OWNER_ID],
-    queryFn: () => api.getGamification(OWNER_ID),
+    queryKey: ['gamification', ownerId],
+    queryFn: () => api.getGamification(ownerId),
   });
 
   // Body doubling — poll partner's presence every 30s. Ambient, not nagging.
   const partnerQuery = useQuery({
-    queryKey: ['partner-presence', OWNER_ID],
-    queryFn: () => api.getPartnerPresence(OWNER_ID),
+    queryKey: ['partner-presence', ownerId],
+    queryFn: () => api.getPartnerPresence(ownerId),
     refetchInterval: 30_000,
   });
 
@@ -63,7 +69,7 @@ export default function NowScreen() {
     onSuccess: (_, taskId) => {
       timer.start(taskId);
       // +5 points awarded server-side; pull the fresh count.
-      queryClient.invalidateQueries({ queryKey: ['gamification', OWNER_ID] });
+      queryClient.invalidateQueries({ queryKey: ['gamification', ownerId] });
     },
   });
 
@@ -73,9 +79,9 @@ export default function NowScreen() {
       timer.reset();
       // The /done endpoint returns the new NextAction inline — push it into
       // the query cache so the UI flips immediately, no extra round-trip.
-      queryClient.setQueryData<NextActionResponse>(['next-action', OWNER_ID], next);
+      queryClient.setQueryData<NextActionResponse>(['next-action', ownerId], next);
       // Streak + points changed; refresh the chip.
-      queryClient.invalidateQueries({ queryKey: ['gamification', OWNER_ID] });
+      queryClient.invalidateQueries({ queryKey: ['gamification', ownerId] });
     },
   });
 
@@ -89,30 +95,14 @@ export default function NowScreen() {
     return () => clearInterval(i);
   }, [isRunning]);
 
-  // ----- render branches -----
+  // ----- render -----
+  // Header + switcher + partner-line are ALWAYS rendered regardless of state
+  // so the owner toggle is reachable even when a queue is empty / loading /
+  // errored. Only the center body varies.
 
-  if (nextActionQuery.isLoading) {
-    return <Centered>Loading…</Centered>;
-  }
-  if (nextActionQuery.isError) {
-    return (
-      <Centered>
-        <Text style={s.errorTitle}>Can't reach the brain.</Text>
-        <Text style={s.errorBody}>
-          Is the backend running on{'\n'}
-          {'  '}http://localhost:8000?
-        </Text>
-        <Text style={s.errorHint}>{String(nextActionQuery.error)}</Text>
-      </Centered>
-    );
-  }
-  const data = nextActionQuery.data!;
-  if (!data.current) {
-    return <Empty />;
-  }
-
-  const task = data.current;
-  const durationMin = Math.min(task.est_minutes, DEFAULT_POMODORO_MIN);
+  const data = nextActionQuery.data;
+  const task = data?.current ?? null;
+  const durationMin = task ? Math.min(task.est_minutes, DEFAULT_POMODORO_MIN) : DEFAULT_POMODORO_MIN;
   const remainingMs = timer.remainingMs(durationMin, nowMs);
 
   return (
@@ -122,46 +112,72 @@ export default function NowScreen() {
         <GameChip data={gamificationQuery.data} />
       </View>
 
+      <OwnerSwitcher active={ownerId} onChange={setOwnerId} />
       <PartnerLine partner={partnerQuery.data} />
 
-      <View style={s.center}>
-        <Text style={s.meta}>NEXT ACTION</Text>
-        <Text style={s.title}>{task.title}</Text>
-        {data.why ? <Text style={s.why}>{data.why}</Text> : null}
-
-        <View style={s.timerWrap}>
-          <Text style={s.timer}>{formatTimer(remainingMs)}</Text>
-          <Text style={s.timerLabel}>
-            {isRunning ? 'remaining' : `${durationMin} min`}
+      {nextActionQuery.isLoading ? (
+        <View style={s.center}>
+          <Text style={s.loading}>Loading…</Text>
+        </View>
+      ) : nextActionQuery.isError ? (
+        <View style={s.center}>
+          <Text style={s.errorTitle}>Can't reach the brain.</Text>
+          <Text style={s.errorBody}>
+            Is the backend running on{'\n'}
+            {'  '}http://localhost:8000?
+          </Text>
+          <Text style={s.errorHint}>{String(nextActionQuery.error)}</Text>
+        </View>
+      ) : !task ? (
+        <View style={s.center}>
+          <Text style={s.emptyTitle}>You're clear.</Text>
+          <Text style={s.emptyBody}>
+            Nothing scheduled for this user. Drop a goal into{'\n'}
+            POST /ingest, or switch users above.
           </Text>
         </View>
+      ) : (
+        <>
+          <View style={s.center}>
+            <Text style={s.meta}>NEXT ACTION</Text>
+            <Text style={s.title}>{task.title}</Text>
+            {data?.why ? <Text style={s.why}>{data.why}</Text> : null}
 
-        {isRunning ? (
-          <ActionButton
-            label="Done"
-            onPress={() => doneMutation.mutate(task.id)}
-            disabled={doneMutation.isPending}
-            kind="done"
-          />
-        ) : (
-          <ActionButton
-            label="Start"
-            onPress={() => startMutation.mutate(task.id)}
-            disabled={startMutation.isPending}
-            kind="start"
-          />
-        )}
-      </View>
+            <View style={s.timerWrap}>
+              <Text style={s.timer}>{formatTimer(remainingMs)}</Text>
+              <Text style={s.timerLabel}>
+                {isRunning ? 'remaining' : `${durationMin} min`}
+              </Text>
+            </View>
 
-      {data.up_next.length > 0 && (
-        <View style={s.upNext}>
-          <Text style={s.upNextLabel}>UP NEXT</Text>
-          {data.up_next.map((t) => (
-            <Text key={t.id} style={s.upNextItem} numberOfLines={1}>
-              · {t.title}
-            </Text>
-          ))}
-        </View>
+            {isRunning ? (
+              <ActionButton
+                label="Done"
+                onPress={() => doneMutation.mutate(task.id)}
+                disabled={doneMutation.isPending}
+                kind="done"
+              />
+            ) : (
+              <ActionButton
+                label="Start"
+                onPress={() => startMutation.mutate(task.id)}
+                disabled={startMutation.isPending}
+                kind="start"
+              />
+            )}
+          </View>
+
+          {data && data.up_next.length > 0 && (
+            <View style={s.upNext}>
+              <Text style={s.upNextLabel}>UP NEXT</Text>
+              {data.up_next.map((t) => (
+                <Text key={t.id} style={s.upNextItem} numberOfLines={1}>
+                  · {t.title}
+                </Text>
+              ))}
+            </View>
+          )}
+        </>
       )}
     </SafeAreaView>
   );
@@ -190,6 +206,35 @@ function ActionButton({
     >
       <Text style={s.buttonText}>{label}</Text>
     </Pressable>
+  );
+}
+
+/**
+ * Dev-only owner switcher. Lets you walk through both cofounders' queues from
+ * one browser session. Replace with auth state when Phase 8 lands.
+ */
+function OwnerSwitcher({
+  active, onChange,
+}: { active: 1 | 2; onChange: (id: 1 | 2) => void }) {
+  return (
+    <View style={s.switcher}>
+      <Text style={s.switcherLabel}>viewing as</Text>
+      {OWNERS.map((o) => (
+        <Pressable
+          key={o.id}
+          onPress={() => onChange(o.id)}
+          style={({ pressed }) => [
+            s.switcherButton,
+            active === o.id && s.switcherButtonActive,
+            pressed && { opacity: 0.7 },
+          ]}
+        >
+          <Text style={[s.switcherButtonText, active === o.id && s.switcherButtonTextActive]}>
+            {o.name}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
   );
 }
 
@@ -245,36 +290,9 @@ function GameChip({ data }: { data?: GamificationOut }) {
 }
 
 
-function Centered({ children }: { children: React.ReactNode }) {
-  return (
-    <SafeAreaView style={s.root}>
-      <View style={[s.center, { gap: spacing.md }]}>
-        {typeof children === 'string' ? (
-          <Text style={s.loading}>{children}</Text>
-        ) : (
-          children
-        )}
-      </View>
-    </SafeAreaView>
-  );
-}
-
-function Empty() {
-  return (
-    <SafeAreaView style={s.root}>
-      <View style={s.header}>
-        <Text style={s.wordmarkText}>cadence</Text>
-      </View>
-      <View style={s.center}>
-        <Text style={s.emptyTitle}>You're clear.</Text>
-        <Text style={s.emptyBody}>
-          Nothing scheduled. Drop a goal into{'\n'}
-          POST /ingest and the brain will queue it up.
-        </Text>
-      </View>
-    </SafeAreaView>
-  );
-}
+// (Centered / Empty wrappers were removed — header + switcher are now always
+// rendered inline in NowScreen so the owner toggle stays reachable in every
+// state, including loading / error / empty.)
 
 // ---------- styles ----------
 
@@ -327,6 +345,35 @@ const s = StyleSheet.create({
   partnerHighlight: {
     color: colors.textDim,
     fontFamily: 'DMSans_500Medium',
+  },
+  switcher: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  switcherLabel: {
+    ...type.micro,
+    color: colors.textFaint,
+    marginRight: spacing.sm,
+  },
+  switcherButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+  },
+  switcherButtonActive: {
+    backgroundColor: colors.surface,
+    borderColor: colors.accent,
+  },
+  switcherButtonText: {
+    ...type.micro,
+    color: colors.textDim,
+  },
+  switcherButtonTextActive: {
+    color: colors.accent,
   },
   center: {
     flex: 1,
