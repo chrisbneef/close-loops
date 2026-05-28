@@ -331,3 +331,34 @@ PYTHONPATH=. pytest tests/
       or "chris is here" (idle); hidden when partner is offline. Ambient
       awareness, not surveillance (the spec's explicit framing).
       26 new tests (171 total) across 7a + 7b.
+- [x] Post-spec — packaging: web app + downloadable desktop widget.
+      The Expo web export (`npm run web:export` → `cadence/dist/`) serves all
+      three routes as static files (index/dashboard/widget). The desktop widget
+      is a Tauri v2 shell ([cadence/src-tauri/](cadence/src-tauri/)) wrapping the
+      `/widget` route as a frameless + transparent + always-on-top window with a
+      system-tray icon and a Cmd/Ctrl+Shift+L show/hide hotkey. **Cannot be built
+      in this sandbox (no Rust toolchain)** — it's verified-by-inspection scaffold
+      to `npm run widget:build` on a Mac/Windows machine. Backend CORS is now
+      env-configurable (`CORS_ALLOW_ORIGINS`). See [DEPLOY.md](DEPLOY.md).
+- [x] Phase 8 — auth (the deploy gate). Password login for the two cofounders.
+      **Backend:** `password_hash` column (Alembic 0008); bcrypt hashing + HS256
+      session JWTs in [app/services/auth.py](backend/app/services/auth.py);
+      `get_current_user` dependency in [app/security.py](backend/app/security.py);
+      `POST /auth/login` + `GET /auth/me` in [app/routers/auth.py](backend/app/routers/auth.py).
+      Data routers are gated via `dependencies=[Depends(get_current_user)]` in
+      [app/main.py](backend/app/main.py); `auth`/`oauth`/`slack`/`health` stay public.
+      `AUTH_SECRET` is required (login 503s without it). Auth gates the **two-person
+      team** — not per-user isolation — because the shared board / partner presence /
+      cross-owner delegation all need cross-visibility. [scripts/set_password.py](backend/scripts/set_password.py)
+      sets a password from env vars (no plaintext in the file). 17 new tests (234 total).
+      Migration applied to live Supabase; both cofounders seeded + login-verified via curl.
+      **Frontend:** branded login screen ([cadence/app/login.tsx](cadence/app/login.tsx));
+      every surface gated behind it with expo-router `Stack.Protected`
+      ([cadence/app/_layout.tsx](cadence/app/_layout.tsx)). Token held in a Zustand store
+      ([cadence/src/auth-store.ts](cadence/src/auth-store.ts)), persisted cross-platform
+      (localStorage on web/Tauri, expo-secure-store on native — [cadence/src/storage.ts](cadence/src/storage.ts)),
+      attached as a Bearer header and cleared on any 401 by the api wrapper. Each surface
+      defaults its board to the logged-in cofounder (replaces hardcoded `OWNER_ID=1`),
+      keeping the owner toggle for the shared board. **Not click-tested in-sandbox** (no
+      interactive browser) — tsc + web export + route-serving verified; user should walk
+      the login UI in a browser.
