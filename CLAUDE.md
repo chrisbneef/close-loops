@@ -340,6 +340,18 @@ PYTHONPATH=. pytest tests/
       in this sandbox (no Rust toolchain)** — it's verified-by-inspection scaffold
       to `npm run widget:build` on a Mac/Windows machine. Backend CORS is now
       env-configurable (`CORS_ALLOW_ORIGINS`). See [DEPLOY.md](DEPLOY.md).
+- [x] Post-spec — "White Board" Kanban column (parked-idea backlog). New task
+      status `whiteboard` (Alembic 0009), shown FIRST on the dashboard Kanban.
+      Deliberately outside the scheduler's `ACTIVE_STATUSES`, so a parked idea
+      gets no calendar block and never surfaces as a next action until promoted.
+      `POST /tasks` accepts `status: whiteboard` (no locked block created);
+      `PATCH /tasks/{id}` accepts `whiteboard` and, when parking, unlocks the
+      task's blocks so the reschedule's diff drops them (incl. the Google event).
+      Frontend: column + click-to-move (→ Up Next / Park) + a "+ dump an idea"
+      capture input on the column. 6 new tests. **Test-safety fix:** conftest now
+      rebinds `app.db.SessionLocal` to a throwaway in-memory SQLite — previously
+      the fresh-session reschedule path (`reschedule.request_reschedule_for_owner`)
+      ran scheduler ticks against the LIVE Supabase DB during the test suite.
 - [x] Phase 8 — auth (the deploy gate). Password login for the two cofounders.
       **Backend:** `password_hash` column (Alembic 0008); bcrypt hashing + HS256
       session JWTs in [app/services/auth.py](backend/app/services/auth.py);

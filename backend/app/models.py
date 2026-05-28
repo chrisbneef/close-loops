@@ -37,7 +37,10 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-TASK_STATUSES = ("pending", "scheduled", "in_progress", "paused", "done", "decayed")
+# 'whiteboard' is a parked-idea backlog column — captured but not committed, so
+# the scheduler ignores it (not in ACTIVE_STATUSES) and it never surfaces as a
+# next action. Promote to 'pending' to commit it and let the scheduler pack it.
+TASK_STATUSES = ("whiteboard", "pending", "scheduled", "in_progress", "paused", "done", "decayed")
 PROJECT_STATUSES = ("active", "paused", "done", "archived")
 PRESENCE_STATUSES = ("focusing", "idle", "offline")
 USER_ROLES = ("cofounder", "team", "contractor")

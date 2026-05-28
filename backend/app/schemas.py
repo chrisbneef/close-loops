@@ -95,6 +95,9 @@ class TaskCreate(BaseModel):
     est_minutes: int = Field(25, ge=5, le=480)
     importance: int = Field(5, ge=1, le=10)
     deadline: Optional[datetime] = None
+    # 'whiteboard' captures a parked idea (no calendar block, scheduler ignores
+    # it); 'pending' (default) is a committed task that gets a locked block.
+    status: Literal["pending", "whiteboard"] = "pending"
 
 
 class PauseRequest(BaseModel):
@@ -196,9 +199,10 @@ class TaskUpdate(BaseModel):
     importance: Optional[int] = Field(None, ge=1, le=10)
     est_minutes: Optional[int] = Field(None, ge=5, le=480)
     deadline: Optional[datetime] = None
-    status: Optional[Literal["pending", "scheduled"]] = Field(
+    status: Optional[Literal["whiteboard", "pending", "scheduled"]] = Field(
         None,
-        description="Only backward/neutral moves. Use /start, /pause, /done for the rest.",
+        description="Only backward/neutral moves (incl. parking to 'whiteboard'). "
+                    "Use /start, /pause, /done for the rest.",
     )
 
 

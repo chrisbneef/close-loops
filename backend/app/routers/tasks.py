@@ -26,8 +26,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["tasks"])
 
 # Statuses shown on the board / returned by GET /tasks (everything but the
-# soft-tombstone 'decayed').
-BOARD_STATUSES = ("pending", "scheduled", "in_progress", "paused", "done")
+# soft-tombstone 'decayed'). 'whiteboard' is the parked-idea backlog column.
+BOARD_STATUSES = ("whiteboard", "pending", "scheduled", "in_progress", "paused", "done")
+
+# Neutral/backward statuses PATCH /tasks/{id} may set directly. Forward moves
+# (in_progress/paused/done) must go through /start, /pause, /done.
+PATCHABLE_STATUSES = ("whiteboard", "pending", "scheduled")
 
 
 def _as_utc(dt: datetime) -> datetime:
@@ -67,30 +71,35 @@ def create_task(body: TaskCreate, session: Session = Depends(get_session)) -> Ta
         est_minutes=body.est_minutes,
         importance=body.importance,
         deadline=body.deadline,
-        status="pending",
+        status=body.status,
     )
     session.add(task)
     session.flush()
 
-    # Append a locked block after the owner's last scheduled block (or now).
-    # Locked so the scheduler treats it as a fixed anchor and won't drop it —
-    # a manually-added task should reliably show up, not get optimized away.
-    now = datetime.now(timezone.utc)
-    last_end = session.execute(
-        select(func.max(CalendarBlock.end))
-        .join(Task, Task.id == CalendarBlock.task_id)
-        .where(Task.owner_id == body.owner_id)
-    ).scalar()
-    start = max(_as_utc(last_end), now) if last_end is not None else now
-    session.add(CalendarBlock(
-        task_id=task.id,
-        start=start,
-        end=start + timedelta(minutes=body.est_minutes),
-        locked=True,
-    ))
+    # A committed (pending) task gets a locked block right after the owner's
+    # last scheduled block so it reliably surfaces in /next-action even on a
+    # full calendar. A parked whiteboard idea gets NO block — it's captured,
+    # not scheduled, until the user promotes it.
+    if body.status == "pending":
+        now = datetime.now(timezone.utc)
+        last_end = session.execute(
+            select(func.max(CalendarBlock.end))
+            .join(Task, Task.id == CalendarBlock.task_id)
+            .where(Task.owner_id == body.owner_id)
+        ).scalar()
+        start = max(_as_utc(last_end), now) if last_end is not None else now
+        session.add(CalendarBlock(
+            task_id=task.id,
+            start=start,
+            end=start + timedelta(minutes=body.est_minutes),
+            locked=True,
+        ))
     session.commit()
     session.refresh(task)
-    logger.info("manual task created task_id=%s owner_id=%s title=%r", task.id, owner.id, task.title)
+    logger.info(
+        "manual task created task_id=%s owner_id=%s status=%s title=%r",
+        task.id, owner.id, task.status, task.title,
+    )
     return TaskOut.model_validate(task)
 
 
@@ -125,9 +134,10 @@ def list_tasks(
 def patch_task(
     task_id: int, body: TaskUpdate, session: Session = Depends(get_session),
 ) -> TaskOut:
-    """Edit fields and/or move a task backward to 'pending'/'scheduled' (Kanban
-    click-to-move). Forward transitions (in_progress/paused/done) are rejected
-    with 409 — use /start, /pause, /done so their side effects fire."""
+    """Edit fields and/or move a task backward/neutral to 'whiteboard'/'pending'/
+    'scheduled' (Kanban click-to-move). Forward transitions (in_progress/paused/
+    done) are rejected with 409 — use /start, /pause, /done so their side effects
+    fire."""
     task = session.get(Task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail=f"task_id={task_id} not found")
@@ -141,10 +151,10 @@ def patch_task(
     if body.deadline is not None:
         task.deadline = body.deadline
 
-    moved_back = False
+    moved = False
     if body.status is not None and body.status != task.status:
-        # Schema already constrains body.status to pending/scheduled, but guard anyway.
-        if body.status not in ("pending", "scheduled"):
+        # Schema already constrains body.status, but guard anyway.
+        if body.status not in PATCHABLE_STATUSES:
             raise HTTPException(
                 status_code=409,
                 detail="Use /tasks/{id}/start, /pause, or /done for in_progress/paused/done.",
@@ -159,13 +169,22 @@ def patch_task(
             ).scalars().all()
             for intr in open_intr:
                 intr.resumed_at = datetime.now(timezone.utc)
+        # Parking to the whiteboard: strip any calendar presence. Unlock the
+        # task's blocks first so the reschedule's diff deletes them (incl. the
+        # Google event) — locked blocks are otherwise preserved.
+        if body.status == "whiteboard":
+            blocks = session.execute(
+                select(CalendarBlock).where(CalendarBlock.task_id == task.id)
+            ).scalars().all()
+            for b in blocks:
+                b.locked = False
         task.status = body.status
-        moved_back = True
+        moved = True
 
     session.commit()
     session.refresh(task)
 
-    if moved_back:
+    if moved:
         reschedule.request_reschedule_for_owner(task.owner_id, reason=f"patch task {task_id} → {task.status}")
 
     return _with_subtasks(session, [task])[0]

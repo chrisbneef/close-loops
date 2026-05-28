@@ -7,6 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import app.db as app_db
 from app.config import settings
 from app.db import Base
 from app.main import app
@@ -18,6 +19,24 @@ from app import models  # noqa: F401 — register models on Base.metadata
 settings.enable_scheduler_loop = False
 # Deterministic signing key so auth tokens encode/decode in tests.
 settings.auth_secret = "test-secret-not-for-production"
+
+# SAFETY: app.db.engine/SessionLocal are created at import from settings.database_url,
+# which in dev points at the live Supabase Postgres. The fresh-session code paths
+# (reschedule.request_reschedule_for_owner -> app.db.SessionLocal) would otherwise
+# run scheduler ticks against PRODUCTION during the test suite. Rebind them to a
+# throwaway in-memory SQLite so those ticks are sandboxed no-ops. (Per-test request
+# sessions use their own engines via the get_session override.)
+_sandbox_engine = create_engine(
+    "sqlite:///:memory:",
+    future=True,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
+Base.metadata.create_all(_sandbox_engine)
+app_db.engine = _sandbox_engine
+app_db.SessionLocal = sessionmaker(
+    bind=_sandbox_engine, autoflush=False, autocommit=False, future=True
+)
 
 
 def pytest_configure(config):

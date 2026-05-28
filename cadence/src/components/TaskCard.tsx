@@ -109,6 +109,9 @@ export function TaskCard({ task, ownerId }: { task: TaskOut; ownerId: 1 | 2 }) {
         </View>
       ) : (
         <View style={s.moves}>
+          {col === 'whiteboard' && (
+            <MoveBtn label="→ Up Next" primary onPress={() => doMove('up_next')} />
+          )}
           {col === 'up_next' && (
             <MoveBtn label="▶ Start" primary onPress={() => doMove('in_progress')} />
           )}
@@ -118,8 +121,11 @@ export function TaskCard({ task, ownerId }: { task: TaskOut; ownerId: 1 | 2 }) {
           {col === 'paused' && (
             <MoveBtn label="▶ Resume" primary onPress={() => doMove('in_progress')} />
           )}
-          {(col === 'up_next' || col === 'in_progress' || col === 'paused') && (
+          {(col === 'whiteboard' || col === 'up_next' || col === 'in_progress' || col === 'paused') && (
             <MoveBtn label="✓ Done" done onPress={() => doMove('done')} />
+          )}
+          {col === 'up_next' && (
+            <MoveBtn label="⬚ Park" onPress={() => doMove('whiteboard')} />
           )}
           {(col === 'in_progress' || col === 'paused' || col === 'done') && (
             <MoveBtn label="↩" onPress={() => doMove('up_next')} />

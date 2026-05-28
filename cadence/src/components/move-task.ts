@@ -10,9 +10,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { api, type TaskOut } from '@/src/api';
 
-export type ColumnKey = 'up_next' | 'in_progress' | 'paused' | 'done';
+export type ColumnKey = 'whiteboard' | 'up_next' | 'in_progress' | 'paused' | 'done';
 
 export const COLUMNS: { key: ColumnKey; label: string }[] = [
+  { key: 'whiteboard', label: 'WHITE BOARD' },
   { key: 'up_next', label: 'UP NEXT' },
   { key: 'in_progress', label: 'IN PROGRESS' },
   { key: 'paused', label: 'PAUSED' },
@@ -22,6 +23,7 @@ export const COLUMNS: { key: ColumnKey; label: string }[] = [
 /** Which board column a task's status belongs in. */
 export function columnFor(status: TaskOut['status']): ColumnKey {
   switch (status) {
+    case 'whiteboard': return 'whiteboard';
     case 'in_progress': return 'in_progress';
     case 'paused': return 'paused';
     case 'done': return 'done';
@@ -40,6 +42,8 @@ export function useTaskMove(ownerId: number) {
           return api.pauseTask(task.id, reason ?? 'paused from board');
         case 'done':
           return api.completeTask(task.id);
+        case 'whiteboard':
+          return api.patchTask(task.id, { status: 'whiteboard' });
         case 'up_next':
           return api.patchTask(task.id, { status: 'pending' });
       }

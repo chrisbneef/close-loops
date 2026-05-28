@@ -10,8 +10,8 @@
  */
 
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api, type TaskOut } from '@/src/api';
 import { useAuth } from '@/src/auth-store';
@@ -109,6 +109,7 @@ function KanbanBoard({ tasks, ownerId }: { tasks: TaskOut[]; ownerId: 1 | 2 }) {
             <Text style={s.columnTitle}>{col.label}</Text>
             <Text style={s.columnCount}>{buckets[col.key].length}</Text>
           </View>
+          {col.key === 'whiteboard' && <WhiteboardCapture ownerId={ownerId} />}
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.columnBody}>
             {buckets[col.key].length === 0 ? (
               <Text style={s.columnEmpty}>—</Text>
@@ -143,6 +144,38 @@ function ListView({ tasks, ownerId }: { tasks: TaskOut[]; ownerId: 1 | 2 }) {
         ),
       )}
     </ScrollView>
+  );
+}
+
+/**
+ * Rapid idea capture for the White Board column. Enter creates a parked task
+ * (status=whiteboard) — no calendar block, scheduler ignores it until promoted.
+ */
+function WhiteboardCapture({ ownerId }: { ownerId: 1 | 2 }) {
+  const qc = useQueryClient();
+  const [text, setText] = useState('');
+  const add = useMutation({
+    mutationFn: (title: string) => api.createTask(ownerId, title, { status: 'whiteboard' }),
+    onSuccess: () => {
+      setText('');
+      qc.invalidateQueries({ queryKey: ['tasks', ownerId] });
+    },
+  });
+  const submit = () => {
+    const t = text.trim();
+    if (t) add.mutate(t);
+  };
+  return (
+    <TextInput
+      value={text}
+      onChangeText={setText}
+      onSubmitEditing={submit}
+      placeholder="+ dump an idea"
+      placeholderTextColor={c.textFaint}
+      style={s.capture}
+      returnKeyType="done"
+      blurOnSubmit={false}
+    />
   );
 }
 
@@ -220,6 +253,18 @@ const s = StyleSheet.create({
   columnTitle: { ...t.hud, color: c.textDim },
   columnCount: { ...t.duration, color: c.textFaint },
   columnBody: { paddingBottom: sp.lg },
+  capture: {
+    ...t.taskMeta,
+    color: c.text,
+    backgroundColor: c.bg,
+    borderRadius: r.sm,
+    borderWidth: 1,
+    borderColor: c.border,
+    paddingHorizontal: sp.sm,
+    paddingVertical: sp.xs,
+    marginBottom: sp.sm,
+    outlineStyle: 'none' as any,
+  },
   columnEmpty: { ...t.taskMeta, color: c.textFaint, textAlign: 'center', paddingVertical: sp.md },
 
   listSection: { marginBottom: sp.lg },

@@ -36,7 +36,7 @@ export interface SubtaskOut {
 }
 
 export type TaskStatus =
-  | 'pending' | 'scheduled' | 'in_progress' | 'paused' | 'done' | 'decayed';
+  | 'whiteboard' | 'pending' | 'scheduled' | 'in_progress' | 'paused' | 'done' | 'decayed';
 
 export interface TaskOut {
   id: number;
@@ -128,15 +128,17 @@ export const api = {
     return jsonRequest<NextActionResponse>(`/next-action?owner_id=${ownerId}`);
   },
   createTask(
-    ownerId: number, title: string, estMinutes?: number, importance?: number,
+    ownerId: number, title: string,
+    opts: { estMinutes?: number; importance?: number; status?: 'pending' | 'whiteboard' } = {},
   ): Promise<TaskOut> {
     return jsonRequest<TaskOut>(`/tasks`, {
       method: 'POST',
       body: JSON.stringify({
         owner_id: ownerId,
         title,
-        ...(estMinutes ? { est_minutes: estMinutes } : {}),
-        ...(importance ? { importance } : {}),
+        ...(opts.estMinutes ? { est_minutes: opts.estMinutes } : {}),
+        ...(opts.importance ? { importance: opts.importance } : {}),
+        ...(opts.status ? { status: opts.status } : {}),
       }),
     });
   },
@@ -150,7 +152,7 @@ export const api = {
   // (in_progress/paused/done) must use start/pause/done — server 409s otherwise.
   patchTask(
     taskId: number,
-    fields: Partial<{ title: string; importance: number; est_minutes: number; deadline: string; status: 'pending' | 'scheduled' }>,
+    fields: Partial<{ title: string; importance: number; est_minutes: number; deadline: string; status: 'whiteboard' | 'pending' | 'scheduled' }>,
   ): Promise<TaskOut> {
     return jsonRequest<TaskOut>(`/tasks/${taskId}`, {
       method: 'PATCH',

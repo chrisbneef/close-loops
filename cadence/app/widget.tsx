@@ -149,7 +149,7 @@ function AddTaskBar({ ownerId }: { ownerId: 1 | 2 }) {
   const [mins, setMins] = useState('25');
 
   const createMutation = useMutation({
-    mutationFn: () => api.createTask(ownerId, title.trim(), parseInt(mins, 10) || 25),
+    mutationFn: () => api.createTask(ownerId, title.trim(), { estMinutes: parseInt(mins, 10) || 25 }),
     onSuccess: () => {
       setTitle('');
       setMins('25');
