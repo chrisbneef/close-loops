@@ -1,13 +1,14 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.routers import (
-    briefing, gamification, ingest, now, oauth, presence, reports, schedule,
-    slack, subtasks, tasks, users,
+    auth, briefing, gamification, ingest, now, oauth, presence, reports,
+    schedule, slack, subtasks, tasks, users,
 )
+from app.security import get_current_user
 from app.services import reminder_loop, scheduler_loop
 
 
@@ -39,18 +40,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(ingest.router)
-app.include_router(schedule.router)
+# Public routers — no user token required:
+#   auth   — issues the token in the first place
+#   oauth  — browser redirect flow, authenticated by the HMAC-signed state
+#   slack  — inbound slash command, verified by the Slack signing secret
+app.include_router(auth.router)
 app.include_router(oauth.router)
-app.include_router(now.router)
-app.include_router(reports.router)
-app.include_router(gamification.router)
-app.include_router(users.router)
-app.include_router(briefing.router)
-app.include_router(presence.router)
-app.include_router(subtasks.router)
-app.include_router(tasks.router)
 app.include_router(slack.router)
+
+# Protected routers — require a valid session token (Depends(get_current_user)).
+# The dependency gates access for the whole two-person team; handlers still take
+# owner_id where the shared board / partner features need it.
+_auth = [Depends(get_current_user)]
+app.include_router(ingest.router, dependencies=_auth)
+app.include_router(schedule.router, dependencies=_auth)
+app.include_router(now.router, dependencies=_auth)
+app.include_router(reports.router, dependencies=_auth)
+app.include_router(gamification.router, dependencies=_auth)
+app.include_router(users.router, dependencies=_auth)
+app.include_router(briefing.router, dependencies=_auth)
+app.include_router(presence.router, dependencies=_auth)
+app.include_router(subtasks.router, dependencies=_auth)
+app.include_router(tasks.router, dependencies=_auth)
 
 
 @app.get("/health")
@@ -58,7 +69,7 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": "cadence-brain"}
 
 
-@app.post("/admin/tick")
+@app.post("/admin/tick", dependencies=[Depends(get_current_user)])
 def admin_tick() -> dict[str, object]:
     """Force a scheduler tick on demand. Useful in dev for testing without
     waiting on the APScheduler interval."""

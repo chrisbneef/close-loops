@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     slack_signing_secret: str = ""  # verifies /loop slash-command requests
     expo_access_token: str = ""
 
+    # Auth (Phase 8) — HS256 signing key for session JWTs. MUST be set in any
+    # environment that serves real logins; the login endpoint refuses to issue
+    # tokens when it's blank (no insecure default).
+    auth_secret: str = ""
+    auth_token_ttl_days: int = 30
+
     # CORS — comma-separated allowed origins for the web/dashboard/widget
     # surfaces. Defaults to "*" (dev). In production set this to the deployed
     # web origins, e.g. "https://app.closeyourloops.com,tauri://localhost".

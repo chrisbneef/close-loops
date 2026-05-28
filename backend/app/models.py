@@ -60,6 +60,9 @@ class User(Base):
     google_refresh_token: Mapped[Optional[str]] = mapped_column(Text)
     # Slack slash-command intake — maps the Slack user running /loop to this row.
     slack_user_id: Mapped[Optional[str]] = mapped_column(String(64), unique=True)
+    # Auth (Phase 8) — bcrypt hash. NULL for users who can't log in directly
+    # (e.g. contractors who only receive delegated tasks).
+    password_hash: Mapped[Optional[str]] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False

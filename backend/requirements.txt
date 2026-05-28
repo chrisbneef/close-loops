@@ -14,5 +14,8 @@ psycopg[binary]>=3.2
 google-auth>=2.30
 google-auth-oauthlib>=1.2
 google-api-python-client>=2.140
+# Auth (Phase 8) — password hashing + JWT session tokens.
+bcrypt>=4.1
+pyjwt>=2.9
 # Test deps (kept in main requirements for now; split into requirements-dev.txt later if needed).
 pytest>=8.0
