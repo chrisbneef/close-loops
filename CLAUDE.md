@@ -340,6 +340,23 @@ PYTHONPATH=. pytest tests/
       in this sandbox (no Rust toolchain)** — it's verified-by-inspection scaffold
       to `npm run widget:build` on a Mac/Windows machine. Backend CORS is now
       env-configurable (`CORS_ALLOW_ORIGINS`). See [DEPLOY.md](DEPLOY.md).
+- [x] Post-spec — daily/weekly memo reports. `GET /reports/daily` (owner's
+      local day so far) + `GET /reports/weekly` (rolling `window_days`, default 7)
+      both return a `PeriodReport`: completion stats (unchanged from Phase 6a) +
+      **what didn't get done** (overdue + scheduled-but-unfinished) + a decayed
+      bucket + a **pause/distraction rollup** (top reason → `biggest_distraction`)
+      + a narrative **`memo`** written by Claude Sonnet 4.6 (same warm/direct voice
+      as the briefing). [app/services/reporting.py](backend/app/services/reporting.py)
+      gathers (pure/testable), [app/services/report_memo.py](backend/app/services/report_memo.py)
+      writes the memo with a deterministic `fallback_memo` when the LLM is
+      unconfigured (so the endpoint never returns a null memo by accident). `?memo=false`
+      skips the LLM for instant stats. Frontend [cadence/app/reports.tsx](cadence/app/reports.tsx)
+      is a widget-themed screen (memo hero → stats strip → didn't-get-done →
+      distraction → completed), Daily/Weekly toggle, linked from the dashboard top bar.
+      16 new tests (247 total). **`decayed` is always empty until a decay-marking
+      mechanism ships — nothing currently sets `status='decayed'`** (the bucket is
+      wired and will light up when decay lands). Test-safety: conftest clears
+      `anthropic_api_key` so report memos fall back instead of hitting the live LLM.
 - [x] Post-spec — "White Board" Kanban column (parked-idea backlog). New task
       status `whiteboard` (Alembic 0009), shown FIRST on the dashboard Kanban.
       Deliberately outside the scheduler's `ACTIVE_STATUSES`, so a parked idea

@@ -1,27 +1,29 @@
-"""Phase 6a: execution analytics. Answers the user's questions from the demo:
-  - How many tasks did you complete on time?
-  - How many ended up late?
-  - On average, did you run over or under your estimates?
+"""Execution analytics — daily & weekly memo-style reports.
 
-Reads from `execution_log` (joined to `tasks` for title/importance/deadline).
-The Phase 7 daily briefing can layer Claude on top of this data to phrase the
-same numbers conversationally — this endpoint just produces the structured stats.
+Both endpoints return a PeriodReport: completion stats (on-time / over-estimate),
+what didn't get done (overdue + scheduled-but-unfinished), decayed tasks, a
+pause/distraction rollup, and a narrative `memo` written by Claude (best-effort;
+falls back to a deterministic summary if the LLM isn't configured).
+
+  GET /reports/daily?owner_id=N   → the owner's current local day so far
+  GET /reports/weekly?owner_id=N  → rolling window_days (default 7)
 """
 
 from __future__ import annotations
 
 import logging
-import statistics
-from datetime import datetime, timedelta, timezone
+import zoneinfo
+from datetime import datetime, time, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_session
-from app.models import ExecutionLog, Task, User
-from app.schemas import ReportRow, WeeklyReport
+from app.models import User
+from app.schemas import PeriodReport
+from app.services import report_memo, reporting
+from app.services.llm import LLMNotConfigured
 
 logger = logging.getLogger(__name__)
 
@@ -30,122 +32,62 @@ router = APIRouter(tags=["reports"])
 DEFAULT_WINDOW_DAYS = 7
 
 
-def _as_utc(dt: Optional[datetime]) -> Optional[datetime]:
-    """SQLite drops tzinfo on read; normalize before comparing."""
-    if dt is None:
-        return None
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+def _owner_tz(owner: User) -> zoneinfo.ZoneInfo:
+    try:
+        return zoneinfo.ZoneInfo(owner.timezone or "UTC")
+    except zoneinfo.ZoneInfoNotFoundError:
+        return zoneinfo.ZoneInfo("UTC")
 
 
-@router.get("/reports/weekly", response_model=WeeklyReport)
-def get_weekly_report(
+def _attach_memo(report: PeriodReport, owner: User, want_memo: bool) -> None:
+    if not want_memo:
+        return
+    try:
+        report.memo = report_memo.generate_memo(report, owner.name)
+    except LLMNotConfigured:
+        report.memo = report_memo.fallback_memo(report, owner.name)
+    except Exception:
+        logger.exception("report memo generation failed; using fallback")
+        report.memo = report_memo.fallback_memo(report, owner.name)
+
+
+@router.get("/reports/daily", response_model=PeriodReport)
+def get_daily_report(
     owner_id: int,
-    end_date: Optional[datetime] = Query(
-        None,
-        description="End of the report window (inclusive). Defaults to now. UTC.",
-    ),
-    window_days: int = Query(
-        DEFAULT_WINDOW_DAYS,
-        ge=1,
-        le=90,
-        description="Window size in days. Default 7 = a week.",
-    ),
+    end_date: Optional[datetime] = Query(None, description="End of the day window (UTC). Defaults to now."),
+    memo: bool = Query(True, description="Generate the narrative memo (1 LLM call). Set false for stats only."),
     session: Session = Depends(get_session),
-) -> WeeklyReport:
-    """Roll up everything in `execution_log` for `owner_id` within the window."""
-    if session.get(User, owner_id) is None:
+) -> PeriodReport:
+    owner = session.get(User, owner_id)
+    if owner is None:
         raise HTTPException(status_code=404, detail=f"owner_id={owner_id} does not exist")
 
-    end = _as_utc(end_date) or datetime.now(timezone.utc)
+    tz = _owner_tz(owner)
+    end = end_date or datetime.now(timezone.utc)
+    # Start of the owner's local day containing `end`.
+    local_end = end.astimezone(tz)
+    start = datetime.combine(local_end.date(), time.min, tzinfo=tz).astimezone(timezone.utc)
+
+    report = reporting.build_report(session, owner_id, granularity="daily", start=start, end=end)
+    _attach_memo(report, owner, memo)
+    return report
+
+
+@router.get("/reports/weekly", response_model=PeriodReport)
+def get_weekly_report(
+    owner_id: int,
+    end_date: Optional[datetime] = Query(None, description="End of the window (inclusive). Defaults to now. UTC."),
+    window_days: int = Query(DEFAULT_WINDOW_DAYS, ge=1, le=90, description="Window size in days. Default 7."),
+    memo: bool = Query(True, description="Generate the narrative memo (1 LLM call). Set false for stats only."),
+    session: Session = Depends(get_session),
+) -> PeriodReport:
+    owner = session.get(User, owner_id)
+    if owner is None:
+        raise HTTPException(status_code=404, detail=f"owner_id={owner_id} does not exist")
+
+    end = end_date or datetime.now(timezone.utc)
     start = end - timedelta(days=window_days)
 
-    rows = list(
-        session.execute(
-            select(ExecutionLog, Task)
-            .join(Task, Task.id == ExecutionLog.task_id)
-            .where(
-                ExecutionLog.user_id == owner_id,
-                ExecutionLog.finished_at >= start,
-                ExecutionLog.finished_at <= end,
-            )
-            .order_by(ExecutionLog.finished_at.desc())
-        ).all()
-    )
-
-    report_rows: list[ReportRow] = []
-    ratios: list[float] = []
-    by_importance: dict[int, dict[str, int]] = {}
-    total_est = 0
-    total_actual = 0
-    on_time_count = 0
-    late_count = 0
-    no_deadline_count = 0
-
-    for log, task in rows:
-        deadline = _as_utc(task.deadline)
-        finished = _as_utc(log.finished_at)
-        on_time: Optional[bool]
-        if deadline is None:
-            on_time = None
-            no_deadline_count += 1
-        elif finished <= deadline:
-            on_time = True
-            on_time_count += 1
-        else:
-            on_time = False
-            late_count += 1
-
-        ratio = log.actual_minutes / max(log.estimated_minutes, 1)
-        ratios.append(ratio)
-        total_est += log.estimated_minutes
-        total_actual += log.actual_minutes
-
-        bucket = by_importance.setdefault(
-            task.importance, {"completed": 0, "on_time": 0, "late": 0}
-        )
-        bucket["completed"] += 1
-        if on_time is True:
-            bucket["on_time"] += 1
-        elif on_time is False:
-            bucket["late"] += 1
-
-        report_rows.append(
-            ReportRow(
-                task_id=task.id,
-                title=task.title,
-                importance=task.importance,
-                estimated_minutes=log.estimated_minutes,
-                actual_minutes=log.actual_minutes,
-                deadline=deadline,
-                scheduled_for=_as_utc(log.scheduled_for),
-                started_at=_as_utc(log.started_at),
-                finished_at=finished,
-                on_time=on_time,
-                over_estimate_ratio=round(ratio, 3),
-            )
-        )
-
-    longest = None
-    if report_rows:
-        longest = max(
-            report_rows,
-            key=lambda r: r.actual_minutes - r.estimated_minutes,
-        )
-
-    return WeeklyReport(
-        owner_id=owner_id,
-        start_date=start,
-        end_date=end,
-        total_completed=len(report_rows),
-        completed_on_time=on_time_count,
-        completed_late=late_count,
-        no_deadline=no_deadline_count,
-        avg_actual_over_est=round(statistics.fmean(ratios), 3) if ratios else None,
-        total_minutes_estimated=total_est,
-        total_minutes_actual=total_actual,
-        longest_overrun=longest,
-        by_importance=dict(sorted(by_importance.items(), reverse=True)),  # 10 → 1
-        rows=report_rows,
-    )
+    report = reporting.build_report(session, owner_id, granularity="weekly", start=start, end=end)
+    _attach_memo(report, owner, memo)
+    return report

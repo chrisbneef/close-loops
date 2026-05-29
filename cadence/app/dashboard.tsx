@@ -11,6 +11,7 @@
 
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Link } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api, type TaskOut } from '@/src/api';
@@ -58,6 +59,7 @@ export default function DashboardScreen() {
             <ViewTab label="KANBAN" on={view === 'kanban'} onPress={() => setView('kanban')} />
             <ViewTab label="LIST" on={view === 'list'} onPress={() => setView('list')} />
           </View>
+          <Link href="/reports" style={s.navLink}>REPORTS</Link>
           <Pressable onPress={() => logout()} hitSlop={6}>
             <Text style={s.signOut}>SIGN OUT</Text>
           </Pressable>
@@ -222,6 +224,7 @@ const s = StyleSheet.create({
   },
   viewTabOn: { backgroundColor: c.surface, color: c.accent },
   signOut: { ...t.duration, color: c.textFaint },
+  navLink: { ...t.duration, color: c.textDim },
 
   body: { flex: 1, flexDirection: 'row' },
   main: { flex: 1, padding: sp.lg },

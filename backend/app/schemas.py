@@ -272,11 +272,35 @@ class ReportRow(BaseModel):
     )
 
 
-class WeeklyReport(BaseModel):
+class OpenTaskRow(BaseModel):
+    """A task that did NOT get completed in the window — overdue, scheduled-but-
+    unfinished, or decayed. Used for the 'what didn't get done' sections."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    task_id: int
+    title: str
+    importance: int
+    status: str
+    deadline: Optional[datetime] = None
+    overdue: bool = Field(False, description="deadline is in the past as of the window end")
+    age_days: Optional[int] = Field(
+        None, description="Days since the task was created (how long it's been languishing)."
+    )
+
+
+class PeriodReport(BaseModel):
+    """A daily or weekly memo-style report. Completion stats (unchanged from the
+    original weekly report) PLUS what didn't get done, a pause/distraction
+    rollup, and a narrative `memo` written by Claude."""
+
     owner_id: int
+    granularity: str = Field("weekly", description="'daily' or 'weekly'.")
     start_date: datetime
     end_date: datetime
-    total_completed: int
+
+    # --- completed ---
+    total_completed: int = 0
     completed_on_time: int = Field(0, description="finished_at <= deadline")
     completed_late: int = Field(0, description="finished_at > deadline")
     no_deadline: int = Field(0, description="tasks completed but no deadline was set")
@@ -297,6 +321,35 @@ class WeeklyReport(BaseModel):
         ),
     )
     rows: list[ReportRow] = Field(default_factory=list, description="All completed tasks in the window, newest first.")
+
+    # --- what didn't get done ---
+    incomplete: list[OpenTaskRow] = Field(
+        default_factory=list,
+        description="Tasks scheduled within the window (or overdue) that aren't done.",
+    )
+    decayed: list[OpenTaskRow] = Field(
+        default_factory=list,
+        description="Tasks marked 'decayed' in the window. Empty until decay-marking ships.",
+    )
+
+    # --- pauses / distraction ---
+    total_pauses: int = 0
+    total_pause_minutes: int = Field(0, description="Sum of resumed pauses' durations.")
+    pause_reasons: dict[str, int] = Field(
+        default_factory=dict, description="reason text → count, within the window."
+    )
+    biggest_distraction: Optional[str] = Field(
+        None, description="Most frequent pause reason in the window."
+    )
+
+    # --- narrative ---
+    memo: Optional[str] = Field(
+        None, description="Memo-style narrative written by Claude (null if not requested/available)."
+    )
+
+
+# Back-compat alias — the original endpoint + tests reference WeeklyReport.
+WeeklyReport = PeriodReport
 
 
 class GamificationOut(BaseModel):

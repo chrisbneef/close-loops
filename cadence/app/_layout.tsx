@@ -101,6 +101,7 @@ export default function RootLayout() {
           <Stack.Screen name="index" />
           <Stack.Screen name="dashboard" />
           <Stack.Screen name="widget" />
+          <Stack.Screen name="reports" />
         </Stack.Protected>
         <Stack.Protected guard={!isAuthed}>
           <Stack.Screen name="login" />

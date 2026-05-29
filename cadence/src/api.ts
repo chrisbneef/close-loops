@@ -62,6 +62,51 @@ export interface NextActionResponse {
   up_next: TaskOut[];
 }
 
+export interface ReportRow {
+  task_id: number;
+  title: string;
+  importance: number;
+  estimated_minutes: number;
+  actual_minutes: number;
+  deadline: string | null;
+  on_time: boolean | null;
+  over_estimate_ratio: number;
+}
+
+export interface OpenTaskRow {
+  task_id: number;
+  title: string;
+  importance: number;
+  status: TaskStatus;
+  deadline: string | null;
+  overdue: boolean;
+  age_days: number | null;
+}
+
+export interface PeriodReport {
+  owner_id: number;
+  granularity: 'daily' | 'weekly';
+  start_date: string;
+  end_date: string;
+  total_completed: number;
+  completed_on_time: number;
+  completed_late: number;
+  no_deadline: number;
+  avg_actual_over_est: number | null;
+  total_minutes_estimated: number;
+  total_minutes_actual: number;
+  longest_overrun: ReportRow | null;
+  by_importance: Record<string, { completed: number; on_time: number; late: number }>;
+  rows: ReportRow[];
+  incomplete: OpenTaskRow[];
+  decayed: OpenTaskRow[];
+  total_pauses: number;
+  total_pause_minutes: number;
+  pause_reasons: Record<string, number>;
+  biggest_distraction: string | null;
+  memo: string | null;
+}
+
 export interface GamificationOut {
   user_id: number;
   points: number;
@@ -179,6 +224,14 @@ export const api = {
   },
   getGamification(ownerId: number): Promise<GamificationOut> {
     return jsonRequest<GamificationOut>(`/gamification?owner_id=${ownerId}`);
+  },
+  // Memo-style daily or weekly report. memo defaults to true (1 LLM call) —
+  // pass memo:false for instant stats-only.
+  getReport(
+    granularity: 'daily' | 'weekly', ownerId: number, opts: { memo?: boolean } = {},
+  ): Promise<PeriodReport> {
+    const memo = opts.memo === false ? '&memo=false' : '';
+    return jsonRequest<PeriodReport>(`/reports/${granularity}?owner_id=${ownerId}${memo}`);
   },
   setPushToken(ownerId: number, pushToken: string): Promise<void> {
     return jsonRequest<void>(`/users/${ownerId}/push-token`, {

@@ -19,6 +19,9 @@ from app import models  # noqa: F401 — register models on Base.metadata
 settings.enable_scheduler_loop = False
 # Deterministic signing key so auth tokens encode/decode in tests.
 settings.auth_secret = "test-secret-not-for-production"
+# No real Anthropic calls in tests: ingest stubs llm.decompose, briefing injects
+# a fake client, and report memos fall back to their deterministic template.
+settings.anthropic_api_key = ""
 
 # SAFETY: app.db.engine/SessionLocal are created at import from settings.database_url,
 # which in dev points at the live Supabase Postgres. The fresh-session code paths
