@@ -35,6 +35,11 @@ wrapper around it.
 
 Already runs against Supabase Postgres. To host it:
 
+> **Hostinger VPS (Ubuntu): see [backend/deploy/README.md](backend/deploy/README.md)**
+> for a complete copy-paste runbook (systemd + Caddy auto-HTTPS + the prod `.env`
+> + Google OAuth redirect update). The generic steps below are the same idea for
+> any always-on host.
+
 1. Provision a small always-on instance (the APScheduler loop must run continuously —
    serverless/lambda won't work for the 60s scheduler + reminder ticks).
 2. Set environment (see `backend/.env.example`). Production-relevant additions:

@@ -1,0 +1,19 @@
+[Unit]
+Description=Cadence brain (FastAPI + APScheduler)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cadence
+WorkingDirectory=/opt/cadence/Close-Loops/backend
+# Single worker on purpose: the scheduler + reminder loops start inside the app
+# process, so >1 worker would double-fire every tick. One worker is plenty for
+# a two-person team. Bound to localhost — Caddy is the only thing that reaches it.
+ExecStart=/opt/cadence/Close-Loops/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+# .env in WorkingDirectory supplies DATABASE_URL, AUTH_SECRET, GOOGLE_OAUTH_*, etc.
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
