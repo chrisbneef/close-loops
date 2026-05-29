@@ -45,7 +45,7 @@ Already runs against Supabase Postgres. To host it:
 2. Set environment (see `backend/.env.example`). Production-relevant additions:
    - `DATABASE_URL` — the Supabase connection string.
    - `CORS_ALLOW_ORIGINS` — the deployed web origin **and** the Tauri origin, e.g.
-     `https://app.closeyourloops.com,tauri://localhost`. (Dev default is `*`.)
+     `https://closedloops.tech,tauri://localhost`. (Dev default is `*`.)
    - `GOOGLE_OAUTH_REDIRECT_URI` — must point at the deployed host's
      `/oauth/google/callback`, and that exact URI must be added to the Google Cloud
      OAuth client's authorized redirect URIs.
@@ -61,7 +61,7 @@ Build the static bundle:
 
 ```bash
 cd cadence
-EXPO_PUBLIC_API_BASE=https://api.closeyourloops.com npm run web:export   # -> cadence/dist/
+EXPO_PUBLIC_API_BASE=https://api.closedloops.tech npm run web:export   # -> cadence/dist/
 ```
 
 `EXPO_PUBLIC_API_BASE` is baked in at export time — point it at the deployed brain, not
@@ -101,7 +101,7 @@ npm install          # pulls @tauri-apps/cli (already in package.json)
 - **Local dev:** `http://localhost:8081/widget` (the value committed now). Run the Expo
   web dev server (`npm run web`) and the backend, then `npm run widget:dev`.
 - **Production:** set it to your deployed web origin, e.g.
-  `https://app.closeyourloops.com/widget`, then `npm run widget:build`. The widget always
+  `https://closedloops.tech/widget`, then `npm run widget:build`. The widget always
   renders live server state — no rebuild needed when the web app changes, only when the
   URL or native shell changes.
 

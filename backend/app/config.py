@@ -33,7 +33,7 @@ class Settings(BaseSettings):
 
     # CORS — comma-separated allowed origins for the web/dashboard/widget
     # surfaces. Defaults to "*" (dev). In production set this to the deployed
-    # web origins, e.g. "https://app.closeyourloops.com,tauri://localhost".
+    # web origins, e.g. "https://closedloops.tech,tauri://localhost".
     cors_allow_origins: str = "*"
 
     @property

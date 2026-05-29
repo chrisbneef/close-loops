@@ -1,8 +1,8 @@
 # Cadence brain — reverse proxy + automatic HTTPS.
-# Replace api.closedloops.com with your real API subdomain (must already point
-# at this VPS via a DNS A record). Caddy provisions + renews the Let's Encrypt
-# cert automatically the first time it starts with a valid domain.
+# api.closedloops.tech must already point at this VPS via a DNS A record. Caddy
+# provisions + renews the Let's Encrypt cert automatically the first time it
+# starts with the domain resolving here.
 
-api.closedloops.com {
+api.closedloops.tech {
     reverse_proxy 127.0.0.1:8000
 }

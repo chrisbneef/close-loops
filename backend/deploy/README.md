@@ -6,11 +6,11 @@ DB. The web app lives separately on Vercel and points at this VPS.
 
 ```
 Browser / widget ──https──▶ Caddy (:443)  ──▶ uvicorn (127.0.0.1:8000)  ──▶ Supabase
-                    api.closedloops.com         systemd: cadence-brain
+                    api.closedloops.tech         systemd: cadence-brain
 ```
 
-Substitute your real domain for `closedloops.com` and your VPS IP for `VPS_IP`
-throughout. Run everything as root (or with sudo).
+The domain `closedloops.tech` is wired in already — just substitute your VPS's
+public IP for `VPS_IP` throughout. Run everything as root (or with sudo).
 
 ---
 
@@ -36,8 +36,8 @@ In Hostinger's DNS panel for your domain, add an **A record**:
 | ---- | ---- | -------- |
 | A    | api  | `VPS_IP` |
 
-(So `api.closedloops.com → VPS_IP`. Point the apex/`www` at Vercel later for the
-web app.) Wait for it to resolve: `dig +short api.closedloops.com` → `VPS_IP`.
+(So `api.closedloops.tech → VPS_IP`. Point the apex/`www` at Vercel later for the
+web app.) Wait for it to resolve: `dig +short api.closedloops.tech` → `VPS_IP`.
 
 ## 2. VPS prep
 
@@ -79,9 +79,9 @@ DATABASE_URL=<your Supabase postgresql:// URL>
 ANTHROPIC_API_KEY=<key>
 GOOGLE_OAUTH_CLIENT_ID=<id>
 GOOGLE_OAUTH_CLIENT_SECRET=<secret>
-GOOGLE_OAUTH_REDIRECT_URI=https://api.closedloops.com/oauth/google/callback
+GOOGLE_OAUTH_REDIRECT_URI=https://api.closedloops.tech/oauth/google/callback
 AUTH_SECRET=<generate: python3 -c "import secrets;print(secrets.token_urlsafe(48))">
-CORS_ALLOW_ORIGINS=https://closedloops.com,https://<your>.vercel.app
+CORS_ALLOW_ORIGINS=https://closedloops.tech,https://www.closedloops.tech
 # optional, post-MVP:
 SLACK_WEBHOOK_URL=
 SLACK_SIGNING_SECRET=
@@ -116,10 +116,9 @@ curl -fsS http://127.0.0.1:8000/health        # {"status":"ok",...}
 ## 7. Caddy (HTTPS)
 
 ```bash
-# Edit the domain in the Caddyfile first, then:
 cp /opt/cadence/Close-Loops/backend/deploy/Caddyfile /etc/caddy/Caddyfile
 systemctl reload caddy
-curl -fsS https://api.closedloops.com/health   # cert auto-provisioned on first hit
+curl -fsS https://api.closedloops.tech/health   # cert auto-provisioned on first hit
 ```
 
 ## 8. Google OAuth — add the prod redirect
@@ -127,11 +126,11 @@ curl -fsS https://api.closedloops.com/health   # cert auto-provisioned on first 
 In Google Cloud Console → your OAuth client → **Authorized redirect URIs**, add:
 
 ```
-https://api.closedloops.com/oauth/google/callback
+https://api.closedloops.tech/oauth/google/callback
 ```
 
 That URI must match `GOOGLE_OAUTH_REDIRECT_URI` in `.env` exactly. Then both
-cofounders re-connect once at `https://api.closedloops.com/oauth/google/start?user_id=1`
+cofounders re-connect once at `https://api.closedloops.tech/oauth/google/start?user_id=1`
 (and `?user_id=2`) to store a fresh refresh token for the prod host.
 
 ## 9. Point the web app (Vercel) at the brain
@@ -139,7 +138,7 @@ cofounders re-connect once at `https://api.closedloops.com/oauth/google/start?us
 When you deploy the web app, build it with:
 
 ```
-EXPO_PUBLIC_API_BASE=https://api.closedloops.com
+EXPO_PUBLIC_API_BASE=https://api.closedloops.tech
 ```
 
 and make sure that Vercel origin is in `CORS_ALLOW_ORIGINS` (step 4). Restart the
