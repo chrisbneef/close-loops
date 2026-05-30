@@ -21,27 +21,55 @@ from app.services.llm import LLMNotConfigured
 logger = logging.getLogger(__name__)
 
 MEMO_MODEL = "claude-sonnet-4-6"
-MAX_TOKENS = 1024
+MAX_TOKENS = 2048
 
 SYSTEM_PROMPT = """\
-You are Cadence writing a short retrospective memo for a co-founder whose
-cognitive profile is high ideation, low task initiation. You're summarizing
-their DAY or their WEEK from the data provided.
+You are Cadence writing an email-style memo to a co-founder whose cognitive
+profile is high ideation, low task initiation. You're summarizing their DAY
+or their WEEK from the data provided.
 
-Structure the memo with these beats (use short bold-ish lead-ins, not headings):
-1. What they accomplished — name the standout items, celebrate real wins, never
-   patronize. If nothing was completed, say so plainly and kindly.
-2. What didn't get done — name the items that slipped (overdue / scheduled but
-   unfinished). Be matter-of-fact, not scolding. This system rewards momentum,
-   not guilt.
-3. Their biggest distraction — if there were pauses, name the top reason and the
-   count; tie it to a gentle observation. Skip if there were no pauses.
-4. One forward-looking nudge — the single most useful thing to carry into
-   tomorrow / next week.
+Format the output exactly as the memo would arrive in their inbox — subject
+line, greeting, labeled sections, sign-off. Use the structure below; do NOT
+deviate, do NOT invent fields. Use the person's first name in the greeting.
 
-Tone: warm, direct, no fluff, no emoji, no hedging. Like a sharp chief of staff
-who read the data and respects the human. 4-7 sentences. Output the memo text
-only — no greeting, no signoff.
+Subject: <short, specific subject line for the period>
+
+<first name>,
+
+<one-sentence opener that sets the frame for the period — name the headline
+fact, e.g. "Six items done, including the two highest-stakes ones." If nothing
+was completed, say so plainly here.>
+
+WHAT YOU SHIPPED
+• <each completed task on its own bullet, named verbatim from the data, with
+  brief context — time taken, on-time/late flag if it had a deadline. List
+  highest-importance items first.>
+(If nothing was completed, write: "Nothing crossed the finish line — that's the data, no spin." and skip the bullets.)
+
+WHAT DIDN'T LAND
+• <each incomplete / overdue task on its own bullet, named verbatim, with
+  OVERDUE called out plainly when true. Highest-importance first.>
+(If the incomplete list is empty: write "Clean slate — nothing slipped." and skip the bullets.)
+
+BIGGEST DISTRACTION
+<2-3 sentences naming the top pause reason with count and total minutes, and
+one honest observation about the pattern. Skip this whole section if there
+were zero pauses in the data.>
+
+FOCUS METRICS
+<one or two lines: total actual focus time (in h/m) vs estimated, % of plan,
+average actual/est ratio. Mention the longest-overrun task by name if there
+was a real one. Use the numbers in the data; do not round arbitrarily.>
+
+THE ONE THING
+<one sentence naming the single most important move for tomorrow (daily) or
+next week (weekly). Concrete, specific, names a task from the data.>
+
+— Cadence
+
+Tone: warm, direct, no fluff, no emoji, no hedging, never patronizing. Like a
+sharp chief of staff who read the data and respects the human. Use REAL task
+names from the data verbatim — do not invent, paraphrase, or generalize.
 """
 
 
@@ -52,7 +80,8 @@ def _bullet(items: list[str]) -> str:
 def _format_for_prompt(report: PeriodReport, owner_name: str) -> str:
     period = "DAY" if report.granularity == "daily" else "WEEK"
     completed = [
-        f"{r.title} (importance {r.importance}, {r.actual_minutes}m"
+        f"{r.title} (importance {r.importance}, est {r.estimated_minutes}m, "
+        f"actual {r.actual_minutes}m, ratio {r.over_estimate_ratio}×"
         + (", on time" if r.on_time else (", LATE" if r.on_time is False else ""))
         + ")"
         for r in report.rows
@@ -64,6 +93,24 @@ def _format_for_prompt(report: PeriodReport, owner_name: str) -> str:
     decayed = [f"{r.title}" for r in report.decayed]
     pause_lines = [f"{reason} ×{n}" for reason, n in report.pause_reasons.items()]
 
+    # Aggregate focus metrics — the FOCUS METRICS section reads from these.
+    agg_lines = [
+        f"  Total focus time: {report.total_minutes_actual} min actual / "
+        f"{report.total_minutes_estimated} min estimated",
+    ]
+    if report.avg_actual_over_est is not None:
+        agg_lines.append(
+            f"  Average over-estimate ratio: {report.avg_actual_over_est}× "
+            f"(>1.0 means tasks ran long on average)"
+        )
+    if report.longest_overrun:
+        lo = report.longest_overrun
+        delta = lo.actual_minutes - lo.estimated_minutes
+        agg_lines.append(
+            f"  Longest overrun: {lo.title} ({lo.actual_minutes}m vs {lo.estimated_minutes}m est, "
+            f"{delta:+d}m delta)"
+        )
+
     lines = [
         f"Person: {owner_name}",
         f"Report type: {period}",
@@ -72,6 +119,9 @@ def _format_for_prompt(report: PeriodReport, owner_name: str) -> str:
         f"COMPLETED ({report.total_completed}; on-time {report.completed_on_time}, "
         f"late {report.completed_late}, no-deadline {report.no_deadline}):",
         _bullet(completed),
+        "",
+        "AGGREGATE FOCUS METRICS:",
+        *agg_lines,
         "",
         f"DID NOT GET DONE ({len(report.incomplete)}):",
         _bullet(incomplete),
