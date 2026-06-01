@@ -14,7 +14,7 @@
       {
         "label": "widget",
         "title": "Close Your Loops",
-        "url": "http://localhost:8081/widget",
+        "url": "https://closedloops.tech/widget",
         "width": 400,
         "height": 640,
         "minWidth": 300,
