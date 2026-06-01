@@ -14,18 +14,13 @@ public IP for `VPS_IP` throughout. Run everything as root (or with sudo).
 
 ---
 
-## 0. Push the repo to GitHub (from your dev machine, one time)
+## 0. The repo
 
-The repo currently has only local commits. Create an empty **private** repo on
-GitHub, then:
+The code lives at **https://github.com/chrisbneef/close-loops**. Push new commits
+from your dev machine the usual way (`git push`); the VPS pulls from there in
+step 3 and after each redeploy.
 
-```bash
-cd /root/Claude-Projects/Close-Loops          # your local repo
-git remote add origin git@github.com:<you>/close-loops.git
-git push -u origin main
-```
-
-> `.env` is gitignored and must NOT be pushed — you'll create it directly on the
+> `.env` is gitignored and must NOT be pushed — you create it directly on the
 > VPS in step 4.
 
 ## 1. DNS — point the API subdomain at the VPS
@@ -60,7 +55,7 @@ ufw allow OpenSSH && ufw allow 80 && ufw allow 443 && ufw --force enable
 ```bash
 useradd --system --create-home --home-dir /opt/cadence cadence
 install -d -o cadence -g cadence /opt/cadence
-sudo -u cadence git clone https://github.com/<you>/close-loops.git /opt/cadence/Close-Loops
+sudo -u cadence git clone https://github.com/chrisbneef/close-loops.git /opt/cadence/Close-Loops
 
 cd /opt/cadence/Close-Loops/backend
 sudo -u cadence python3 -m venv .venv
