@@ -1,0 +1,64 @@
+name: Build Widget
+
+# How to build a new widget installer:
+# 1. Go to https://github.com/chrisbneef/close-loops/actions
+# 2. Click "Build Widget" in the left sidebar
+# 3. Click "Run workflow" (top right) → "Run workflow" (green button)
+# 4. Wait ~8 min while GitHub builds it
+# 5. Click the finished run, scroll to "Artifacts" at the bottom
+# 6. Download "close-your-loops-widget-msi" — that's the .msi
+# 7. Share the .msi with your team. They double-click → "More info → Run anyway" → installed.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'widget-v*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cadence/src-tauri -> target
+
+      - name: Install npm dependencies
+        working-directory: cadence
+        run: npm install
+
+      - name: Export web bundle
+        working-directory: cadence
+        run: npx expo export --platform web
+
+      - name: Build Tauri widget (.msi)
+        working-directory: cadence
+        run: npm run widget:build
+
+      - name: Upload .msi as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: close-your-loops-widget-msi
+          path: cadence/src-tauri/target/release/bundle/msi/*.msi
+          retention-days: 90
+
+      - name: Attach .msi to GitHub Release (only on tag push)
+        if: startsWith(github.ref, 'refs/tags/widget-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: cadence/src-tauri/target/release/bundle/msi/*.msi
+          draft: false
+          generate_release_notes: true
