@@ -73,11 +73,6 @@ export default function DashboardScreen() {
         </View>
       </View>
 
-      {/* New-task inline strip — opens on demand or via empty-state CTA */}
-      {newTaskOpen && (
-        <NewTaskForm ownerId={ownerId} onClose={() => setNewTaskOpen(false)} />
-      )}
-
       {/* Body: main area + right sidebar */}
       <View style={s.body}>
         <View style={s.main}>
@@ -110,6 +105,11 @@ export default function DashboardScreen() {
           )}
         </View>
       </View>
+
+      {/* New-task popover — full overlay above the whole dashboard */}
+      {newTaskOpen && (
+        <NewTaskModal ownerId={ownerId} onClose={() => setNewTaskOpen(false)} />
+      )}
     </View>
   );
 }
@@ -165,21 +165,45 @@ function ListView({ tasks, ownerId }: { tasks: TaskOut[]; ownerId: 1 | 2 }) {
 }
 
 /**
- * Inline new-task form. Creates a real pending task (with a locked block) so it
- * appears in Up Next immediately and the scheduler packs it on the next tick.
- * For idea-dump-only items use the White Board column's capture input instead.
+ * New-task popover. Creates a real pending task (with locked block + any
+ * subtasks the user listed) so it appears in Up Next immediately and the
+ * scheduler packs it on the next tick. For pure idea-dump items use the
+ * White Board column's capture input instead.
+ *
+ * Backdrop-click closes; Esc-equivalent is the ✕ in the corner. The Add
+ * button is disabled until there's a title.
  */
-function NewTaskForm({ ownerId, onClose }: { ownerId: 1 | 2; onClose: () => void }) {
+function NewTaskModal({ ownerId, onClose }: { ownerId: 1 | 2; onClose: () => void }) {
   const qc = useQueryClient();
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [mins, setMins] = useState('25');
+  const [importance, setImportance] = useState(5);
+  const [deadline, setDeadline] = useState('');                 // YYYY-MM-DD
+  const [subtasks, setSubtasks] = useState<string[]>([]);
+  const [newSubtask, setNewSubtask] = useState('');
 
   const create = useMutation({
-    mutationFn: () =>
-      api.createTask(ownerId, title.trim(), { estMinutes: parseInt(mins, 10) || 25 }),
+    mutationFn: async () => {
+      // Convert local YYYY-MM-DD to ISO at end-of-day so a "due May 5" deadline
+      // really means anytime that day, not midnight UTC = afternoon-before-locally.
+      const deadlineIso = deadline
+        ? new Date(`${deadline}T23:59:59`).toISOString()
+        : undefined;
+      const task = await api.createTask(ownerId, title.trim(), {
+        estMinutes: parseInt(mins, 10) || 25,
+        importance,
+        description: description.trim() || undefined,
+        deadline: deadlineIso,
+      });
+      // Subtasks added one at a time; the server preserves insertion order via
+      // its `position` column.
+      for (let i = 0; i < subtasks.length; i++) {
+        await api.createSubtask(task.id, subtasks[i], i);
+      }
+      return task;
+    },
     onSuccess: () => {
-      setTitle('');
-      setMins('25');
       qc.invalidateQueries({ queryKey: ['tasks', ownerId] });
       qc.invalidateQueries({ queryKey: ['next-action', ownerId] });
       onClose();
@@ -189,45 +213,169 @@ function NewTaskForm({ ownerId, onClose }: { ownerId: 1 | 2; onClose: () => void
   const canSubmit = title.trim().length > 0 && !create.isPending;
   const submit = () => { if (canSubmit) create.mutate(); };
 
+  const addSubtask = () => {
+    const trimmed = newSubtask.trim();
+    if (!trimmed) return;
+    setSubtasks((prev) => [...prev, trimmed]);
+    setNewSubtask('');
+  };
+  const removeSubtask = (idx: number) =>
+    setSubtasks((prev) => prev.filter((_, i) => i !== idx));
+
   return (
-    <View style={s.newTaskBar}>
-      <TextInput
-        value={title}
-        onChangeText={setTitle}
-        onSubmitEditing={submit}
-        placeholder="what's the task?"
-        placeholderTextColor={c.textFaint}
-        style={s.newTaskTitle}
-        autoFocus
-        returnKeyType="done"
-      />
-      <TextInput
-        value={mins}
-        onChangeText={(v) => setMins(v.replace(/[^0-9]/g, ''))}
-        onSubmitEditing={submit}
-        placeholder="25"
-        placeholderTextColor={c.textFaint}
-        style={s.newTaskMins}
-        inputMode="numeric"
-        returnKeyType="done"
-      />
-      <Text style={s.newTaskMinsLabel}>min</Text>
-      <Pressable
-        onPress={submit}
-        disabled={!canSubmit}
-        style={({ pressed }) => [
-          s.newTaskBtn,
-          !canSubmit && s.newTaskBtnDisabled,
-          pressed && canSubmit && { opacity: 0.85 },
-        ]}
-      >
-        <Text style={[s.newTaskBtnText, !canSubmit && { color: c.textFaint }]}>
-          {create.isPending ? '…' : '+ ADD'}
-        </Text>
-      </Pressable>
-      <Pressable onPress={onClose} hitSlop={6}>
-        <Text style={s.newTaskClose}>✕</Text>
-      </Pressable>
+    <View style={s.modalBackdrop}>
+      {/* Backdrop is its own pressable so the click area only covers the dim outside */}
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <View style={s.modal}>
+        <View style={s.modalHead}>
+          <Text style={s.modalTitle}>New Task</Text>
+          <Pressable onPress={onClose} hitSlop={8}>
+            <Text style={s.modalClose}>✕</Text>
+          </Pressable>
+        </View>
+
+        <ScrollView style={s.modalBody} contentContainerStyle={{ gap: sp.md }}>
+          {/* Title */}
+          <View style={s.field}>
+            <Text style={s.fieldLabel}>TITLE</Text>
+            <TextInput
+              value={title}
+              onChangeText={setTitle}
+              placeholder="what's the task?"
+              placeholderTextColor={c.textFaint}
+              style={s.input}
+              autoFocus
+              returnKeyType="next"
+            />
+          </View>
+
+          {/* Description */}
+          <View style={s.field}>
+            <Text style={s.fieldLabel}>DESCRIPTION</Text>
+            <TextInput
+              value={description}
+              onChangeText={setDescription}
+              placeholder="optional context, links, anything you'd want to remember"
+              placeholderTextColor={c.textFaint}
+              style={[s.input, s.inputMultiline]}
+              multiline
+              numberOfLines={3}
+            />
+          </View>
+
+          {/* Time + Priority row */}
+          <View style={s.row}>
+            <View style={[s.field, { flex: 0, width: 120 }]}>
+              <Text style={s.fieldLabel}>ESTIMATE</Text>
+              <View style={s.minsRow}>
+                <TextInput
+                  value={mins}
+                  onChangeText={(v) => setMins(v.replace(/[^0-9]/g, ''))}
+                  placeholder="25"
+                  placeholderTextColor={c.textFaint}
+                  style={[s.input, { width: 60, textAlign: 'center' }]}
+                  inputMode="numeric"
+                />
+                <Text style={s.unitLabel}>min</Text>
+              </View>
+            </View>
+            <View style={[s.field, { flex: 1 }]}>
+              <Text style={s.fieldLabel}>PRIORITY (1 = low, 10 = critical)</Text>
+              <View style={s.priorityRow}>
+                {[1,2,3,4,5,6,7,8,9,10].map((n) => (
+                  <Pressable
+                    key={n}
+                    onPress={() => setImportance(n)}
+                    style={({ pressed }) => [
+                      s.priorityBtn,
+                      importance === n && s.priorityBtnOn,
+                      pressed && { opacity: 0.85 },
+                    ]}
+                  >
+                    <Text style={[s.priorityBtnText, importance === n && s.priorityBtnTextOn]}>
+                      {n}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          </View>
+
+          {/* Deadline */}
+          <View style={s.field}>
+            <Text style={s.fieldLabel}>DEADLINE (optional)</Text>
+            <TextInput
+              value={deadline}
+              onChangeText={setDeadline}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={c.textFaint}
+              style={[s.input, { width: 200 }]}
+              inputMode="numeric"
+            />
+          </View>
+
+          {/* Subtasks */}
+          <View style={s.field}>
+            <Text style={s.fieldLabel}>SUBTASKS</Text>
+            {subtasks.length > 0 && (
+              <View style={s.subtaskList}>
+                {subtasks.map((sub, i) => (
+                  <View key={i} style={s.subtaskRow}>
+                    <Text style={s.subtaskBullet}>•</Text>
+                    <Text style={s.subtaskText} numberOfLines={1}>{sub}</Text>
+                    <Pressable onPress={() => removeSubtask(i)} hitSlop={6}>
+                      <Text style={s.subtaskDelete}>✕</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            )}
+            <View style={s.subtaskInputRow}>
+              <TextInput
+                value={newSubtask}
+                onChangeText={setNewSubtask}
+                onSubmitEditing={addSubtask}
+                placeholder="+ add a step (Enter to add another)"
+                placeholderTextColor={c.textFaint}
+                style={[s.input, { flex: 1 }]}
+                returnKeyType="done"
+                blurOnSubmit={false}
+              />
+              <Pressable
+                onPress={addSubtask}
+                disabled={!newSubtask.trim()}
+                style={({ pressed }) => [
+                  s.subtaskAddBtn,
+                  !newSubtask.trim() && { opacity: 0.4 },
+                  pressed && { opacity: 0.85 },
+                ]}
+              >
+                <Text style={s.subtaskAddBtnText}>ADD</Text>
+              </Pressable>
+            </View>
+          </View>
+        </ScrollView>
+
+        {/* Footer: Cancel + Add Task */}
+        <View style={s.modalFoot}>
+          <Pressable onPress={onClose} style={s.cancelBtn}>
+            <Text style={s.cancelBtnText}>Cancel</Text>
+          </Pressable>
+          <Pressable
+            onPress={submit}
+            disabled={!canSubmit}
+            style={({ pressed }) => [
+              s.submitBtn,
+              !canSubmit && s.submitBtnDisabled,
+              pressed && canSubmit && { opacity: 0.85 },
+            ]}
+          >
+            <Text style={[s.submitBtnText, !canSubmit && { color: c.textFaint }]}>
+              {create.isPending ? 'CREATING…' : '+ ADD TASK'}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
     </View>
   );
 }
@@ -338,52 +486,114 @@ const s = StyleSheet.create({
   },
   newTaskTriggerText: { ...t.duration, color: c.accent },
 
-  // Inline new-task form strip (below top bar)
-  newTaskBar: {
+  // New-task popover modal
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: sp.lg,
+    zIndex: 100,
+  },
+  modal: {
+    width: '100%',
+    maxWidth: 640,
+    maxHeight: '90%',
+    backgroundColor: c.surface,
+    borderRadius: r.lg,
+    borderWidth: 1,
+    borderColor: c.border,
+    overflow: 'hidden',
+  },
+  modalHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: sp.lg,
+    paddingVertical: sp.md,
+    borderBottomWidth: 1,
+    borderBottomColor: c.border,
+  },
+  modalTitle: { ...t.hud, color: c.accent, fontSize: 14 },
+  modalClose: { ...t.subtask, color: c.textDim, fontSize: 18 },
+  modalBody: { paddingHorizontal: sp.lg, paddingVertical: sp.md },
+  modalFoot: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: sp.sm,
+    paddingHorizontal: sp.lg,
+    paddingVertical: sp.md,
+    borderTopWidth: 1,
+    borderTopColor: c.border,
+    backgroundColor: c.bg,
+  },
+
+  field: { gap: sp.xs },
+  fieldLabel: { ...t.micro, color: c.textFaint },
+  input: {
+    ...t.subtask,
+    color: c.text,
+    backgroundColor: c.bg,
+    borderRadius: r.sm,
+    borderWidth: 1,
+    borderColor: c.border,
+    paddingHorizontal: sp.sm,
+    paddingVertical: sp.xs,
+    outlineStyle: 'none' as any,
+  },
+  inputMultiline: { minHeight: 72, textAlignVertical: 'top' as any, paddingVertical: sp.sm },
+  row: { flexDirection: 'row', gap: sp.md, alignItems: 'flex-start' },
+  minsRow: { flexDirection: 'row', alignItems: 'center', gap: sp.sm },
+  unitLabel: { ...t.taskMeta, color: c.textDim },
+
+  priorityRow: { flexDirection: 'row', gap: 4, flexWrap: 'wrap' },
+  priorityBtn: {
+    minWidth: 30,
+    paddingHorizontal: sp.xs,
+    paddingVertical: sp.xs,
+    borderRadius: r.sm,
+    borderWidth: 1,
+    borderColor: c.border,
+    backgroundColor: c.bg,
+    alignItems: 'center',
+  },
+  priorityBtnOn: { backgroundColor: c.accent, borderColor: c.accent },
+  priorityBtnText: { ...t.duration, color: c.textDim },
+  priorityBtnTextOn: { color: c.textOnAccent },
+
+  subtaskList: { gap: 2, marginBottom: sp.xs },
+  subtaskRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: sp.sm,
-    paddingHorizontal: sp.lg,
-    paddingVertical: sp.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: c.border,
-    backgroundColor: c.surface,
-  },
-  newTaskTitle: {
-    flex: 1,
-    ...t.subtask,
-    color: c.text,
+    paddingVertical: 3,
+    paddingHorizontal: sp.sm,
     backgroundColor: c.bg,
     borderRadius: r.sm,
+  },
+  subtaskBullet: { ...t.subtask, color: c.accent },
+  subtaskText: { ...t.subtask, color: c.text, flex: 1 },
+  subtaskDelete: { ...t.taskMeta, color: c.textDim, paddingHorizontal: sp.xs },
+  subtaskInputRow: { flexDirection: 'row', gap: sp.sm, alignItems: 'center' },
+  subtaskAddBtn: {
     borderWidth: 1,
     borderColor: c.border,
-    paddingHorizontal: sp.sm,
-    paddingVertical: sp.xs,
-    outlineStyle: 'none' as any,
-  },
-  newTaskMins: {
-    width: 56,
-    ...t.subtask,
-    color: c.text,
-    backgroundColor: c.bg,
-    borderRadius: r.sm,
-    borderWidth: 1,
-    borderColor: c.border,
-    paddingHorizontal: sp.sm,
-    paddingVertical: sp.xs,
-    outlineStyle: 'none' as any,
-    textAlign: 'center',
-  },
-  newTaskMinsLabel: { ...t.taskMeta, color: c.textDim },
-  newTaskBtn: {
-    backgroundColor: c.accent,
     borderRadius: r.sm,
     paddingHorizontal: sp.md,
     paddingVertical: 6,
   },
-  newTaskBtnDisabled: { backgroundColor: c.surfaceElevated },
-  newTaskBtnText: { ...t.button, color: c.textOnAccent },
-  newTaskClose: { ...t.subtask, color: c.textDim, paddingHorizontal: sp.xs },
+  subtaskAddBtnText: { ...t.duration, color: c.textDim },
+
+  cancelBtn: { paddingHorizontal: sp.lg, paddingVertical: sp.sm, borderRadius: r.sm },
+  cancelBtnText: { ...t.button, color: c.textDim },
+  submitBtn: {
+    backgroundColor: c.accent,
+    borderRadius: r.sm,
+    paddingHorizontal: sp.xl,
+    paddingVertical: sp.sm,
+  },
+  submitBtnDisabled: { backgroundColor: c.surfaceElevated },
+  submitBtnText: { ...t.button, color: c.textOnAccent },
 
   // Empty-state CTA
   emptyState: {

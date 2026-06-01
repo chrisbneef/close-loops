@@ -174,7 +174,13 @@ export const api = {
   },
   createTask(
     ownerId: number, title: string,
-    opts: { estMinutes?: number; importance?: number; status?: 'pending' | 'whiteboard' } = {},
+    opts: {
+      estMinutes?: number;
+      importance?: number;
+      status?: 'pending' | 'whiteboard';
+      description?: string;
+      deadline?: string;     // ISO 8601 datetime
+    } = {},
   ): Promise<TaskOut> {
     return jsonRequest<TaskOut>(`/tasks`, {
       method: 'POST',
@@ -184,6 +190,8 @@ export const api = {
         ...(opts.estMinutes ? { est_minutes: opts.estMinutes } : {}),
         ...(opts.importance ? { importance: opts.importance } : {}),
         ...(opts.status ? { status: opts.status } : {}),
+        ...(opts.description ? { description: opts.description } : {}),
+        ...(opts.deadline ? { deadline: opts.deadline } : {}),
       }),
     });
   },

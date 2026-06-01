@@ -95,6 +95,7 @@ class TaskCreate(BaseModel):
     est_minutes: int = Field(25, ge=5, le=480)
     importance: int = Field(5, ge=1, le=10)
     deadline: Optional[datetime] = None
+    description: Optional[str] = Field(None, max_length=5000)
     # 'whiteboard' captures a parked idea (no calendar block, scheduler ignores
     # it); 'pending' (default) is a committed task that gets a locked block.
     status: Literal["pending", "whiteboard"] = "pending"

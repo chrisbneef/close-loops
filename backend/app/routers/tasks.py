@@ -67,6 +67,7 @@ def create_task(body: TaskCreate, session: Session = Depends(get_session)) -> Ta
 
     task = Task(
         title=body.title,
+        description=body.description,
         owner_id=body.owner_id,
         est_minutes=body.est_minutes,
         importance=body.importance,
