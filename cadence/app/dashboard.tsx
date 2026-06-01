@@ -30,6 +30,7 @@ export default function DashboardScreen() {
   const logout = useAuth((s) => s.logout);
   const [ownerId, setOwnerId] = useState<1 | 2>(authUserId);
   const [view, setView] = useState<ViewMode>('kanban');
+  const [newTaskOpen, setNewTaskOpen] = useState(false);
 
   const tasksQuery = useQuery({
     queryKey: ['tasks', ownerId],
@@ -54,6 +55,12 @@ export default function DashboardScreen() {
           <Text style={s.brandSub}>· dashboard</Text>
         </View>
         <View style={s.topbarRight}>
+          <Pressable
+            onPress={() => setNewTaskOpen((open) => !open)}
+            style={({ pressed }) => [s.newTaskTrigger, pressed && { opacity: 0.85 }]}
+          >
+            <Text style={s.newTaskTriggerText}>+ NEW TASK</Text>
+          </Pressable>
           <OwnerSwitcher active={ownerId} onChange={setOwnerId} />
           <View style={s.viewToggle}>
             <ViewTab label="KANBAN" on={view === 'kanban'} onPress={() => setView('kanban')} />
@@ -66,15 +73,23 @@ export default function DashboardScreen() {
         </View>
       </View>
 
+      {/* New-task inline strip — opens on demand or via empty-state CTA */}
+      {newTaskOpen && (
+        <NewTaskForm ownerId={ownerId} onClose={() => setNewTaskOpen(false)} />
+      )}
+
       {/* Body: main area + right sidebar */}
       <View style={s.body}>
         <View style={s.main}>
           {tasksQuery.isLoading ? (
             <Text style={s.muted}>Loading…</Text>
           ) : tasksQuery.isError ? (
-            <Text style={s.muted}>Can't reach the brain at localhost:8000.</Text>
+            <Text style={s.muted}>Can't reach the brain.</Text>
           ) : tasks.length === 0 ? (
-            <Text style={s.muted}>No tasks for this user. Switch owner or add one.</Text>
+            <EmptyBoard
+              ownerId={ownerId}
+              onAdd={() => setNewTaskOpen(true)}
+            />
           ) : view === 'kanban' ? (
             <KanbanBoard tasks={tasks} ownerId={ownerId} />
           ) : (
@@ -146,6 +161,93 @@ function ListView({ tasks, ownerId }: { tasks: TaskOut[]; ownerId: 1 | 2 }) {
         ),
       )}
     </ScrollView>
+  );
+}
+
+/**
+ * Inline new-task form. Creates a real pending task (with a locked block) so it
+ * appears in Up Next immediately and the scheduler packs it on the next tick.
+ * For idea-dump-only items use the White Board column's capture input instead.
+ */
+function NewTaskForm({ ownerId, onClose }: { ownerId: 1 | 2; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [title, setTitle] = useState('');
+  const [mins, setMins] = useState('25');
+
+  const create = useMutation({
+    mutationFn: () =>
+      api.createTask(ownerId, title.trim(), { estMinutes: parseInt(mins, 10) || 25 }),
+    onSuccess: () => {
+      setTitle('');
+      setMins('25');
+      qc.invalidateQueries({ queryKey: ['tasks', ownerId] });
+      qc.invalidateQueries({ queryKey: ['next-action', ownerId] });
+      onClose();
+    },
+  });
+
+  const canSubmit = title.trim().length > 0 && !create.isPending;
+  const submit = () => { if (canSubmit) create.mutate(); };
+
+  return (
+    <View style={s.newTaskBar}>
+      <TextInput
+        value={title}
+        onChangeText={setTitle}
+        onSubmitEditing={submit}
+        placeholder="what's the task?"
+        placeholderTextColor={c.textFaint}
+        style={s.newTaskTitle}
+        autoFocus
+        returnKeyType="done"
+      />
+      <TextInput
+        value={mins}
+        onChangeText={(v) => setMins(v.replace(/[^0-9]/g, ''))}
+        onSubmitEditing={submit}
+        placeholder="25"
+        placeholderTextColor={c.textFaint}
+        style={s.newTaskMins}
+        inputMode="numeric"
+        returnKeyType="done"
+      />
+      <Text style={s.newTaskMinsLabel}>min</Text>
+      <Pressable
+        onPress={submit}
+        disabled={!canSubmit}
+        style={({ pressed }) => [
+          s.newTaskBtn,
+          !canSubmit && s.newTaskBtnDisabled,
+          pressed && canSubmit && { opacity: 0.85 },
+        ]}
+      >
+        <Text style={[s.newTaskBtnText, !canSubmit && { color: c.textFaint }]}>
+          {create.isPending ? '…' : '+ ADD'}
+        </Text>
+      </Pressable>
+      <Pressable onPress={onClose} hitSlop={6}>
+        <Text style={s.newTaskClose}>✕</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+/** Friendly empty board with a clear CTA to add the first task. */
+function EmptyBoard({ ownerId: _o, onAdd }: { ownerId: 1 | 2; onAdd: () => void }) {
+  return (
+    <View style={s.emptyState}>
+      <Text style={s.emptyTitle}>Clean slate.</Text>
+      <Text style={s.emptyBody}>
+        Nothing on the board yet. Add a task to get started, or drop a fuzzy goal
+        into the White Board column and decompose it later.
+      </Text>
+      <Pressable
+        onPress={onAdd}
+        style={({ pressed }) => [s.emptyCta, pressed && { opacity: 0.85 }]}
+      >
+        <Text style={s.emptyCtaText}>+ ADD A TASK</Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -225,6 +327,87 @@ const s = StyleSheet.create({
   viewTabOn: { backgroundColor: c.surface, color: c.accent },
   signOut: { ...t.duration, color: c.textFaint },
   navLink: { ...t.duration, color: c.textDim },
+
+  // "+ NEW TASK" button in top bar
+  newTaskTrigger: {
+    borderWidth: 1,
+    borderColor: c.accent,
+    borderRadius: r.md,
+    paddingHorizontal: sp.md,
+    paddingVertical: sp.xs,
+  },
+  newTaskTriggerText: { ...t.duration, color: c.accent },
+
+  // Inline new-task form strip (below top bar)
+  newTaskBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sp.sm,
+    paddingHorizontal: sp.lg,
+    paddingVertical: sp.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: c.border,
+    backgroundColor: c.surface,
+  },
+  newTaskTitle: {
+    flex: 1,
+    ...t.subtask,
+    color: c.text,
+    backgroundColor: c.bg,
+    borderRadius: r.sm,
+    borderWidth: 1,
+    borderColor: c.border,
+    paddingHorizontal: sp.sm,
+    paddingVertical: sp.xs,
+    outlineStyle: 'none' as any,
+  },
+  newTaskMins: {
+    width: 56,
+    ...t.subtask,
+    color: c.text,
+    backgroundColor: c.bg,
+    borderRadius: r.sm,
+    borderWidth: 1,
+    borderColor: c.border,
+    paddingHorizontal: sp.sm,
+    paddingVertical: sp.xs,
+    outlineStyle: 'none' as any,
+    textAlign: 'center',
+  },
+  newTaskMinsLabel: { ...t.taskMeta, color: c.textDim },
+  newTaskBtn: {
+    backgroundColor: c.accent,
+    borderRadius: r.sm,
+    paddingHorizontal: sp.md,
+    paddingVertical: 6,
+  },
+  newTaskBtnDisabled: { backgroundColor: c.surfaceElevated },
+  newTaskBtnText: { ...t.button, color: c.textOnAccent },
+  newTaskClose: { ...t.subtask, color: c.textDim, paddingHorizontal: sp.xs },
+
+  // Empty-state CTA
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: sp.xl,
+    gap: sp.sm,
+  },
+  emptyTitle: { ...t.taskTitle, color: c.text, fontSize: 18 },
+  emptyBody: {
+    ...t.taskMeta,
+    color: c.textDim,
+    textAlign: 'center',
+    maxWidth: 380,
+    marginBottom: sp.md,
+  },
+  emptyCta: {
+    backgroundColor: c.accent,
+    paddingHorizontal: sp.xl,
+    paddingVertical: sp.md,
+    borderRadius: r.md,
+  },
+  emptyCtaText: { ...t.button, color: c.textOnAccent },
 
   body: { flex: 1, flexDirection: 'row' },
   main: { flex: 1, padding: sp.lg },
