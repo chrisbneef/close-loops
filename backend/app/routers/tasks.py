@@ -151,6 +151,8 @@ def patch_task(
         task.est_minutes = body.est_minutes
     if body.deadline is not None:
         task.deadline = body.deadline
+    if body.description is not None:
+        task.description = body.description
 
     moved = False
     if body.status is not None and body.status != task.status:

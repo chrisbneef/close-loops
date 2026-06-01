@@ -200,6 +200,7 @@ class TaskUpdate(BaseModel):
     importance: Optional[int] = Field(None, ge=1, le=10)
     est_minutes: Optional[int] = Field(None, ge=5, le=480)
     deadline: Optional[datetime] = None
+    description: Optional[str] = Field(None, max_length=5000)
     status: Optional[Literal["whiteboard", "pending", "scheduled"]] = Field(
         None,
         description="Only backward/neutral moves (incl. parking to 'whiteboard'). "

@@ -205,7 +205,7 @@ export const api = {
   // (in_progress/paused/done) must use start/pause/done — server 409s otherwise.
   patchTask(
     taskId: number,
-    fields: Partial<{ title: string; importance: number; est_minutes: number; deadline: string; status: 'whiteboard' | 'pending' | 'scheduled' }>,
+    fields: Partial<{ title: string; importance: number; est_minutes: number; deadline: string; description: string; status: 'whiteboard' | 'pending' | 'scheduled' }>,
   ): Promise<TaskOut> {
     return jsonRequest<TaskOut>(`/tasks/${taskId}`, {
       method: 'PATCH',

@@ -31,6 +31,7 @@ export default function DashboardScreen() {
   const [ownerId, setOwnerId] = useState<1 | 2>(authUserId);
   const [view, setView] = useState<ViewMode>('kanban');
   const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<TaskOut | null>(null);
 
   const tasksQuery = useQuery({
     queryKey: ['tasks', ownerId],
@@ -86,9 +87,9 @@ export default function DashboardScreen() {
               onAdd={() => setNewTaskOpen(true)}
             />
           ) : view === 'kanban' ? (
-            <KanbanBoard tasks={tasks} ownerId={ownerId} />
+            <KanbanBoard tasks={tasks} ownerId={ownerId} onEdit={setEditingTask} />
           ) : (
-            <ListView tasks={tasks} ownerId={ownerId} />
+            <ListView tasks={tasks} ownerId={ownerId} onEdit={setEditingTask} />
           )}
         </View>
 
@@ -97,7 +98,12 @@ export default function DashboardScreen() {
           {nextQuery.data?.current ? (
             <ScrollView showsVerticalScrollIndicator={false}>
               {[nextQuery.data.current, ...nextQuery.data.up_next].map((task) => (
-                <TaskCard key={task.id} task={task} ownerId={ownerId} />
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  ownerId={ownerId}
+                  onEdit={setEditingTask}
+                />
               ))}
             </ScrollView>
           ) : (
@@ -106,15 +112,21 @@ export default function DashboardScreen() {
         </View>
       </View>
 
-      {/* New-task popover — full overlay above the whole dashboard */}
-      {newTaskOpen && (
-        <NewTaskModal ownerId={ownerId} onClose={() => setNewTaskOpen(false)} />
+      {/* Task popover — handles both create and edit. */}
+      {(newTaskOpen || editingTask) && (
+        <TaskModal
+          ownerId={ownerId}
+          editingTask={editingTask ?? undefined}
+          onClose={() => { setNewTaskOpen(false); setEditingTask(null); }}
+        />
       )}
     </View>
   );
 }
 
-function KanbanBoard({ tasks, ownerId }: { tasks: TaskOut[]; ownerId: 1 | 2 }) {
+function KanbanBoard({
+  tasks, ownerId, onEdit,
+}: { tasks: TaskOut[]; ownerId: 1 | 2; onEdit: (task: TaskOut) => void }) {
   const buckets: Record<string, TaskOut[]> = Object.fromEntries(COLUMNS.map((col) => [col.key, []]));
   for (const task of tasks) buckets[columnFor(task.status)].push(task);
 
@@ -132,7 +144,7 @@ function KanbanBoard({ tasks, ownerId }: { tasks: TaskOut[]; ownerId: 1 | 2 }) {
               <Text style={s.columnEmpty}>—</Text>
             ) : (
               buckets[col.key].map((task) => (
-                <TaskCard key={task.id} task={task} ownerId={ownerId} />
+                <TaskCard key={task.id} task={task} ownerId={ownerId} onEdit={onEdit} />
               ))
             )}
           </ScrollView>
@@ -142,7 +154,9 @@ function KanbanBoard({ tasks, ownerId }: { tasks: TaskOut[]; ownerId: 1 | 2 }) {
   );
 }
 
-function ListView({ tasks, ownerId }: { tasks: TaskOut[]; ownerId: 1 | 2 }) {
+function ListView({
+  tasks, ownerId, onEdit,
+}: { tasks: TaskOut[]; ownerId: 1 | 2; onEdit: (task: TaskOut) => void }) {
   const buckets: Record<string, TaskOut[]> = Object.fromEntries(COLUMNS.map((col) => [col.key, []]));
   for (const task of tasks) buckets[columnFor(task.status)].push(task);
 
@@ -155,7 +169,7 @@ function ListView({ tasks, ownerId }: { tasks: TaskOut[]; ownerId: 1 | 2 }) {
               {col.label} · {buckets[col.key].length}
             </Text>
             {buckets[col.key].map((task) => (
-              <TaskCard key={task.id} task={task} ownerId={ownerId} />
+              <TaskCard key={task.id} task={task} ownerId={ownerId} onEdit={onEdit} />
             ))}
           </View>
         ),
@@ -165,28 +179,39 @@ function ListView({ tasks, ownerId }: { tasks: TaskOut[]; ownerId: 1 | 2 }) {
 }
 
 /**
- * New-task popover. Creates a real pending task (with locked block + any
- * subtasks the user listed) so it appears in Up Next immediately and the
- * scheduler packs it on the next tick. For pure idea-dump items use the
- * White Board column's capture input instead.
+ * Task popover — handles both creating a new task and editing an existing
+ * one. When `editingTask` is set, the form is pre-populated with that task's
+ * values and Save calls PATCH /tasks/{id}; when omitted, Submit creates a
+ * new pending task (plus any staged subtasks) via POST /tasks.
  *
- * Backdrop-click closes; Esc-equivalent is the ✕ in the corner. The Add
- * button is disabled until there's a title.
+ * Backdrop-click closes; Esc-equivalent is the ✕ in the corner. Submit is
+ * disabled until there's a title.
  */
-function NewTaskModal({ ownerId, onClose }: { ownerId: 1 | 2; onClose: () => void }) {
+function TaskModal({
+  ownerId, editingTask, onClose,
+}: {
+  ownerId: 1 | 2;
+  editingTask?: TaskOut;
+  onClose: () => void;
+}) {
   const qc = useQueryClient();
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [mins, setMins] = useState('25');
-  const [importance, setImportance] = useState(5);
-  const [deadline, setDeadline] = useState('');                 // YYYY-MM-DD
-  const [subtasks, setSubtasks] = useState<string[]>([]);
+  const isEdit = !!editingTask;
+
+  const [title, setTitle] = useState(editingTask?.title ?? '');
+  const [description, setDescription] = useState(editingTask?.description ?? '');
+  const [mins, setMins] = useState(String(editingTask?.est_minutes ?? 25));
+  const [importance, setImportance] = useState(editingTask?.importance ?? 5);
+  // YYYY-MM-DD; sliced from the ISO string if editing.
+  const [deadline, setDeadline] = useState(
+    editingTask?.deadline ? editingTask.deadline.slice(0, 10) : ''
+  );
+  const [subtasks, setSubtasks] = useState<string[]>([]);  // staged subtasks (create mode only)
   const [newSubtask, setNewSubtask] = useState('');
 
   const create = useMutation({
     mutationFn: async () => {
-      // Convert local YYYY-MM-DD to ISO at end-of-day so a "due May 5" deadline
-      // really means anytime that day, not midnight UTC = afternoon-before-locally.
+      // Convert local YYYY-MM-DD to ISO at end-of-day so "due May 5" really means
+      // anytime that day, not midnight UTC = afternoon-before-locally.
       const deadlineIso = deadline
         ? new Date(`${deadline}T23:59:59`).toISOString()
         : undefined;
@@ -196,8 +221,7 @@ function NewTaskModal({ ownerId, onClose }: { ownerId: 1 | 2; onClose: () => voi
         description: description.trim() || undefined,
         deadline: deadlineIso,
       });
-      // Subtasks added one at a time; the server preserves insertion order via
-      // its `position` column.
+      // Subtasks added one at a time; server preserves order via `position`.
       for (let i = 0; i < subtasks.length; i++) {
         await api.createSubtask(task.id, subtasks[i], i);
       }
@@ -210,8 +234,32 @@ function NewTaskModal({ ownerId, onClose }: { ownerId: 1 | 2; onClose: () => voi
     },
   });
 
-  const canSubmit = title.trim().length > 0 && !create.isPending;
-  const submit = () => { if (canSubmit) create.mutate(); };
+  const update = useMutation({
+    mutationFn: async () => {
+      const deadlineIso = deadline
+        ? new Date(`${deadline}T23:59:59`).toISOString()
+        : undefined;
+      return api.patchTask(editingTask!.id, {
+        title: title.trim(),
+        description: description.trim() || undefined,
+        est_minutes: parseInt(mins, 10) || 25,
+        importance,
+        ...(deadlineIso ? { deadline: deadlineIso } : {}),
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tasks', ownerId] });
+      qc.invalidateQueries({ queryKey: ['next-action', ownerId] });
+      onClose();
+    },
+  });
+
+  const busy = isEdit ? update.isPending : create.isPending;
+  const canSubmit = title.trim().length > 0 && !busy;
+  const submit = () => {
+    if (!canSubmit) return;
+    isEdit ? update.mutate() : create.mutate();
+  };
 
   const addSubtask = () => {
     const trimmed = newSubtask.trim();
@@ -228,7 +276,7 @@ function NewTaskModal({ ownerId, onClose }: { ownerId: 1 | 2; onClose: () => voi
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
       <View style={s.modal}>
         <View style={s.modalHead}>
-          <Text style={s.modalTitle}>New Task</Text>
+          <Text style={s.modalTitle}>{isEdit ? 'Edit Task' : 'New Task'}</Text>
           <Pressable onPress={onClose} hitSlop={8}>
             <Text style={s.modalClose}>✕</Text>
           </Pressable>
@@ -314,49 +362,52 @@ function NewTaskModal({ ownerId, onClose }: { ownerId: 1 | 2; onClose: () => voi
             />
           </View>
 
-          {/* Subtasks */}
-          <View style={s.field}>
-            <Text style={s.fieldLabel}>SUBTASKS</Text>
-            {subtasks.length > 0 && (
-              <View style={s.subtaskList}>
-                {subtasks.map((sub, i) => (
-                  <View key={i} style={s.subtaskRow}>
-                    <Text style={s.subtaskBullet}>•</Text>
-                    <Text style={s.subtaskText} numberOfLines={1}>{sub}</Text>
-                    <Pressable onPress={() => removeSubtask(i)} hitSlop={6}>
-                      <Text style={s.subtaskDelete}>✕</Text>
-                    </Pressable>
-                  </View>
-                ))}
+          {/* Subtasks — only stageable when creating. When editing, subtask
+              add/delete is done from the card (tap the chevron to expand). */}
+          {!isEdit && (
+            <View style={s.field}>
+              <Text style={s.fieldLabel}>SUBTASKS</Text>
+              {subtasks.length > 0 && (
+                <View style={s.subtaskList}>
+                  {subtasks.map((sub, i) => (
+                    <View key={i} style={s.subtaskRow}>
+                      <Text style={s.subtaskBullet}>•</Text>
+                      <Text style={s.subtaskText} numberOfLines={1}>{sub}</Text>
+                      <Pressable onPress={() => removeSubtask(i)} hitSlop={6}>
+                        <Text style={s.subtaskDelete}>✕</Text>
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
+              )}
+              <View style={s.subtaskInputRow}>
+                <TextInput
+                  value={newSubtask}
+                  onChangeText={setNewSubtask}
+                  onSubmitEditing={addSubtask}
+                  placeholder="+ add a step (Enter to add another)"
+                  placeholderTextColor={c.textFaint}
+                  style={[s.input, { flex: 1 }]}
+                  returnKeyType="done"
+                  blurOnSubmit={false}
+                />
+                <Pressable
+                  onPress={addSubtask}
+                  disabled={!newSubtask.trim()}
+                  style={({ pressed }) => [
+                    s.subtaskAddBtn,
+                    !newSubtask.trim() && { opacity: 0.4 },
+                    pressed && { opacity: 0.85 },
+                  ]}
+                >
+                  <Text style={s.subtaskAddBtnText}>ADD</Text>
+                </Pressable>
               </View>
-            )}
-            <View style={s.subtaskInputRow}>
-              <TextInput
-                value={newSubtask}
-                onChangeText={setNewSubtask}
-                onSubmitEditing={addSubtask}
-                placeholder="+ add a step (Enter to add another)"
-                placeholderTextColor={c.textFaint}
-                style={[s.input, { flex: 1 }]}
-                returnKeyType="done"
-                blurOnSubmit={false}
-              />
-              <Pressable
-                onPress={addSubtask}
-                disabled={!newSubtask.trim()}
-                style={({ pressed }) => [
-                  s.subtaskAddBtn,
-                  !newSubtask.trim() && { opacity: 0.4 },
-                  pressed && { opacity: 0.85 },
-                ]}
-              >
-                <Text style={s.subtaskAddBtnText}>ADD</Text>
-              </Pressable>
             </View>
-          </View>
+          )}
         </ScrollView>
 
-        {/* Footer: Cancel + Add Task */}
+        {/* Footer: Cancel + (Save | Add Task) */}
         <View style={s.modalFoot}>
           <Pressable onPress={onClose} style={s.cancelBtn}>
             <Text style={s.cancelBtnText}>Cancel</Text>
@@ -371,7 +422,9 @@ function NewTaskModal({ ownerId, onClose }: { ownerId: 1 | 2; onClose: () => voi
             ]}
           >
             <Text style={[s.submitBtnText, !canSubmit && { color: c.textFaint }]}>
-              {create.isPending ? 'CREATING…' : '+ ADD TASK'}
+              {busy
+                ? isEdit ? 'SAVING…' : 'CREATING…'
+                : isEdit ? 'SAVE' : '+ ADD TASK'}
             </Text>
           </Pressable>
         </View>

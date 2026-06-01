@@ -30,7 +30,13 @@ function deadlineLabel(iso: string | null): string | null {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-export function TaskCard({ task, ownerId }: { task: TaskOut; ownerId: 1 | 2 }) {
+export function TaskCard({
+  task, ownerId, onEdit,
+}: {
+  task: TaskOut;
+  ownerId: 1 | 2;
+  onEdit?: (task: TaskOut) => void;
+}) {
   const qc = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const [askReason, setAskReason] = useState(false);
@@ -59,11 +65,25 @@ export function TaskCard({ task, ownerId }: { task: TaskOut; ownerId: 1 | 2 }) {
 
   return (
     <View style={[s.card, col === 'in_progress' && s.cardActive]}>
-      <Pressable onPress={() => subTotal > 0 && setExpanded(!expanded)} style={s.head}>
-        {subTotal > 0 && <Text style={s.chevron}>{expanded ? '▾' : '▸'}</Text>}
-        <Text style={s.title} numberOfLines={2}>{task.title}</Text>
+      <View style={s.head}>
+        <Pressable
+          onPress={() => subTotal > 0 && setExpanded(!expanded)}
+          style={s.headLeft}
+        >
+          {subTotal > 0 && <Text style={s.chevron}>{expanded ? '▾' : '▸'}</Text>}
+          <Text style={s.title} numberOfLines={2}>{task.title}</Text>
+        </Pressable>
         <Text style={s.dur}>{formatDuration(task.est_minutes)}</Text>
-      </Pressable>
+        {onEdit && (
+          <Pressable
+            onPress={() => onEdit(task)}
+            hitSlop={6}
+            style={({ pressed }) => [s.editBtn, pressed && { opacity: 0.6 }]}
+          >
+            <Text style={s.editIcon}>✎</Text>
+          </Pressable>
+        )}
+      </View>
 
       <View style={s.meta}>
         <Text style={s.metaItem}>imp {task.importance}</Text>
@@ -166,9 +186,12 @@ const s = StyleSheet.create({
   },
   cardActive: { borderColor: c.borderActive },
   head: { flexDirection: 'row', alignItems: 'flex-start', gap: sp.xs },
+  headLeft: { flexDirection: 'row', alignItems: 'flex-start', gap: sp.xs, flex: 1 },
   chevron: { color: c.textFaint, fontSize: 11, marginTop: 2 },
   title: { ...t.taskTitle, color: c.text, flex: 1 },
   dur: { ...t.duration, color: c.textDim },
+  editBtn: { paddingHorizontal: 2, marginLeft: 2 },
+  editIcon: { ...t.duration, color: c.textFaint, fontSize: 14 },
   meta: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
   metaItem: { ...t.taskMeta, color: c.textDim },
   metaDeadline: { ...t.taskMeta, color: c.warning },
