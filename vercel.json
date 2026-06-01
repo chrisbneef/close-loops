@@ -1,0 +1,7 @@
+{
+  "installCommand": "cd cadence && npm install",
+  "buildCommand": "cd cadence && npx expo export --platform web",
+  "outputDirectory": "cadence/dist",
+  "cleanUrls": true,
+  "trailingSlash": false
+}
