@@ -96,6 +96,10 @@ class TaskCreate(BaseModel):
     importance: int = Field(5, ge=1, le=10)
     deadline: Optional[datetime] = None
     description: Optional[str] = Field(None, max_length=5000)
+    recurrence: Optional[Literal["daily", "weekly", "monthly"]] = Field(
+        None,
+        description="If set, marking the task done spawns the next occurrence.",
+    )
     # 'whiteboard' captures a parked idea (no calendar block, scheduler ignores
     # it); 'pending' (default) is a committed task that gets a locked block.
     status: Literal["pending", "whiteboard"] = "pending"
@@ -189,6 +193,7 @@ class TaskOut(BaseModel):
     importance: int
     status: str
     deadline: Optional[datetime] = None
+    recurrence: Optional[str] = None
     # Timestamps for richer board cards ("started 12m ago", done time). Additive.
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
@@ -209,6 +214,9 @@ class TaskUpdate(BaseModel):
     deadline: Optional[datetime] = None
     description: Optional[str] = Field(None, max_length=5000)
     owner_id: Optional[int] = Field(None, description="Reassign the task to a different cofounder.")
+    # Use the string "none" to clear an existing recurrence (Pydantic can't
+    # distinguish JSON-null from "not provided", so we use a sentinel string).
+    recurrence: Optional[Literal["daily", "weekly", "monthly", "none"]] = None
     status: Optional[Literal["whiteboard", "pending", "scheduled"]] = Field(
         None,
         description="Only backward/neutral moves (incl. parking to 'whiteboard'). "

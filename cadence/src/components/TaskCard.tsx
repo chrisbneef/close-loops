@@ -97,6 +97,7 @@ export function TaskCard({
         <Text style={s.metaItem}>imp {task.importance}</Text>
         {subTotal > 0 && <Text style={s.metaItem}> · {subDone}/{subTotal}</Text>}
         {dl && <Text style={s.metaDeadline}> · {dl}</Text>}
+        {task.recurrence && <Text style={s.metaRecur}> · ↻ {task.recurrence}</Text>}
       </View>
 
       {expanded && subTotal > 0 && (
@@ -222,6 +223,7 @@ const s = StyleSheet.create({
   meta: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
   metaItem: { ...t.taskMeta, color: c.textDim },
   metaDeadline: { ...t.taskMeta, color: c.warning },
+  metaRecur: { ...t.taskMeta, color: c.accent },
   subs: { gap: 2, paddingLeft: sp.md, paddingTop: sp.xs },
   subRow: { flexDirection: 'row', alignItems: 'center', gap: sp.xs },
   checkbox: { color: c.textFaint, fontSize: 13 },

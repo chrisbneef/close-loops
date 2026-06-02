@@ -211,6 +211,9 @@ function TaskModal({
   const [deadline, setDeadline] = useState(
     editingTask?.deadline ? editingTask.deadline.slice(0, 10) : ''
   );
+  const [recurrence, setRecurrence] = useState<'none' | 'daily' | 'weekly' | 'monthly'>(
+    (editingTask?.recurrence as 'daily' | 'weekly' | 'monthly' | null) ?? 'none'
+  );
   const [subtasks, setSubtasks] = useState<string[]>([]);  // staged subtasks (create mode only)
   const [newSubtask, setNewSubtask] = useState('');
 
@@ -242,6 +245,7 @@ function TaskModal({
         importance,
         description: description.trim() || undefined,
         deadline: deadlineIso,
+        ...(recurrence !== 'none' ? { recurrence } : {}),
       });
       // Subtasks added one at a time; server preserves order via `position`.
       for (let i = 0; i < subtasks.length; i++) {
@@ -257,6 +261,8 @@ function TaskModal({
       const deadlineIso = deadline
         ? new Date(`${deadline}T23:59:59`).toISOString()
         : undefined;
+      const currentRec = (editingTask!.recurrence ?? 'none') as
+        'none' | 'daily' | 'weekly' | 'monthly';
       return api.patchTask(editingTask!.id, {
         title: title.trim(),
         description: description.trim() || undefined,
@@ -264,6 +270,7 @@ function TaskModal({
         importance,
         ...(deadlineIso ? { deadline: deadlineIso } : {}),
         ...(assignedTo !== editingTask!.owner_id ? { owner_id: assignedTo } : {}),
+        ...(recurrence !== currentRec ? { recurrence } : {}),
       });
     },
     onSuccess: () => { invalidateBoards(); onClose(); },
@@ -378,6 +385,28 @@ function TaskModal({
               onChange={setDeadline}
               style={[s.input, { width: 200 }]}
             />
+          </View>
+
+          {/* Repeats */}
+          <View style={s.field}>
+            <Text style={s.fieldLabel}>REPEATS</Text>
+            <View style={s.recurrenceRow}>
+              {(['none', 'daily', 'weekly', 'monthly'] as const).map((option) => (
+                <Pressable
+                  key={option}
+                  onPress={() => setRecurrence(option)}
+                  style={({ pressed }) => [
+                    s.recurrenceBtn,
+                    recurrence === option && s.recurrenceBtnOn,
+                    pressed && { opacity: 0.85 },
+                  ]}
+                >
+                  <Text style={[s.recurrenceBtnText, recurrence === option && s.recurrenceBtnTextOn]}>
+                    {option === 'none' ? 'No repeat' : option.charAt(0).toUpperCase() + option.slice(1)}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
           </View>
 
           {/* Subtasks — only stageable when creating. When editing, subtask
@@ -631,6 +660,19 @@ const s = StyleSheet.create({
   priorityBtnOn: { backgroundColor: c.accent, borderColor: c.accent },
   priorityBtnText: { ...t.duration, color: c.textDim },
   priorityBtnTextOn: { color: c.textOnAccent },
+
+  recurrenceRow: { flexDirection: 'row', gap: sp.xs, flexWrap: 'wrap' },
+  recurrenceBtn: {
+    paddingHorizontal: sp.md,
+    paddingVertical: sp.xs,
+    borderRadius: r.sm,
+    borderWidth: 1,
+    borderColor: c.border,
+    backgroundColor: c.bg,
+  },
+  recurrenceBtnOn: { backgroundColor: c.accent, borderColor: c.accent },
+  recurrenceBtnText: { ...t.duration, color: c.textDim },
+  recurrenceBtnTextOn: { color: c.textOnAccent },
 
   subtaskList: { gap: 2, marginBottom: sp.xs },
   subtaskRow: {

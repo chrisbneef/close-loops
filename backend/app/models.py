@@ -119,6 +119,9 @@ class Task(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     # Fixed anchors: live webinars, dry-runs, scheduled email sends.
     is_immutable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # 'daily' | 'weekly' | 'monthly' | NULL. When set, marking the task done
+    # spawns a fresh copy with the next deadline + reset subtasks.
+    recurrence: Mapped[Optional[str]] = mapped_column(String(16))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

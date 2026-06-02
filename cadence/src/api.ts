@@ -38,6 +38,8 @@ export interface SubtaskOut {
 export type TaskStatus =
   | 'whiteboard' | 'pending' | 'scheduled' | 'in_progress' | 'paused' | 'done' | 'decayed';
 
+export type Recurrence = 'daily' | 'weekly' | 'monthly' | null;
+
 export interface TaskOut {
   id: number;
   title: string;
@@ -48,6 +50,7 @@ export interface TaskOut {
   importance: number;
   status: TaskStatus;
   deadline: string | null;
+  recurrence: Recurrence;
   started_at: string | null;
   finished_at: string | null;
   created_at: string | null;
@@ -181,6 +184,7 @@ export const api = {
       status?: 'pending' | 'whiteboard';
       description?: string;
       deadline?: string;     // ISO 8601 datetime
+      recurrence?: 'daily' | 'weekly' | 'monthly';
     } = {},
   ): Promise<TaskOut> {
     return jsonRequest<TaskOut>(`/tasks`, {
@@ -193,6 +197,7 @@ export const api = {
         ...(opts.status ? { status: opts.status } : {}),
         ...(opts.description ? { description: opts.description } : {}),
         ...(opts.deadline ? { deadline: opts.deadline } : {}),
+        ...(opts.recurrence ? { recurrence: opts.recurrence } : {}),
       }),
     });
   },
@@ -206,7 +211,7 @@ export const api = {
   // (in_progress/paused/done) must use start/pause/done — server 409s otherwise.
   patchTask(
     taskId: number,
-    fields: Partial<{ title: string; importance: number; est_minutes: number; deadline: string; description: string; owner_id: number; status: 'whiteboard' | 'pending' | 'scheduled' }>,
+    fields: Partial<{ title: string; importance: number; est_minutes: number; deadline: string; description: string; owner_id: number; recurrence: 'daily' | 'weekly' | 'monthly' | 'none'; status: 'whiteboard' | 'pending' | 'scheduled' }>,
   ): Promise<TaskOut> {
     return jsonRequest<TaskOut>(`/tasks/${taskId}`, {
       method: 'PATCH',

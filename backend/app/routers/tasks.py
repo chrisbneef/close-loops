@@ -72,6 +72,7 @@ def create_task(body: TaskCreate, session: Session = Depends(get_session)) -> Ta
         est_minutes=body.est_minutes,
         importance=body.importance,
         deadline=body.deadline,
+        recurrence=body.recurrence,
         status=body.status,
     )
     session.add(task)
@@ -153,6 +154,9 @@ def patch_task(
         task.deadline = body.deadline
     if body.description is not None:
         task.description = body.description
+    if body.recurrence is not None:
+        # 'none' is the explicit "clear it" sentinel; daily/weekly/monthly set it.
+        task.recurrence = None if body.recurrence == "none" else body.recurrence
     reassigned = False
     if body.owner_id is not None and body.owner_id != task.owner_id:
         new_owner = session.get(User, body.owner_id)

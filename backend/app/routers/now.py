@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.db import get_session
 from app.models import CalendarBlock, ExecutionLog, Interruption, Task, TaskSubtask
 from app.schemas import CompleteRequest, NextActionResponse, PauseRequest, SubtaskOut, TaskOut
-from app.services import gamification, presence, reschedule
+from app.services import gamification, presence, recurrence, reschedule
 
 logger = logging.getLogger(__name__)
 
@@ -227,6 +227,9 @@ def complete_task(
     presence.update_presence(
         session, task.owner_id, status="idle", current_task_id=None,
     )
+    # Spawn the next occurrence inside the same transaction so a recurrence
+    # always shows up if /done succeeds.
+    spawned = recurrence.spawn_next_if_recurring(session, task)
     session.commit()
     logger.info(
         "task done task_id=%s owner_id=%s est=%s actual=%s",
