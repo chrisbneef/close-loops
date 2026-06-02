@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -176,7 +176,7 @@ def resume_task(task_id: int, session: Session = Depends(get_session)) -> TaskOu
 @router.post("/tasks/{task_id}/done", response_model=NextActionResponse)
 def complete_task(
     task_id: int,
-    body: Optional[CompleteRequest] = None,
+    body: CompleteRequest = Body(default_factory=CompleteRequest),
     session: Session = Depends(get_session),
 ) -> NextActionResponse:
     """User hit Done. Stamp finished_at, log actual_minutes to execution_log
@@ -210,7 +210,7 @@ def complete_task(
     ).scalar_one_or_none()
     scheduled_for = block.start if block else None
 
-    notes = (body.completion_notes or "").strip() or None if body else None
+    notes = (body.completion_notes or "").strip() or None
     session.add(
         ExecutionLog(
             task_id=task.id,
