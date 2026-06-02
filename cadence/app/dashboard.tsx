@@ -10,7 +10,9 @@
  */
 
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View,
+} from 'react-native';
 import { Link } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -19,7 +21,7 @@ import { useAuth } from '@/src/auth-store';
 import { DateField } from '@/src/components/DateField';
 import { OwnerSwitcher } from '@/src/components/OwnerSwitcher';
 import { TaskCard } from '@/src/components/TaskCard';
-import { COLUMNS, columnFor } from '@/src/components/move-task';
+import { COLUMNS, columnFor, type ColumnKey } from '@/src/components/move-task';
 import {
   widgetColors as c, widgetRadii as r, widgetSpacing as sp, widgetType as t,
 } from '@/src/widget-theme';
@@ -29,6 +31,10 @@ type ViewMode = 'kanban' | 'list';
 export default function DashboardScreen() {
   const authUserId = useAuth((s) => s.user?.id ?? 1) as 1 | 2;
   const logout = useAuth((s) => s.logout);
+  // Below this width the 5-up Kanban + side rail won't fit — collapse to a
+  // single-column, tab-navigated phone layout.
+  const { width } = useWindowDimensions();
+  const narrow = width < 760;
   const [ownerId, setOwnerId] = useState<1 | 2>(authUserId);
   const [view, setView] = useState<ViewMode>('kanban');
   const [newTaskOpen, setNewTaskOpen] = useState(false);
@@ -50,13 +56,13 @@ export default function DashboardScreen() {
   return (
     <View style={s.root}>
       {/* Top bar */}
-      <View style={s.topbar}>
+      <View style={[s.topbar, narrow && s.topbarNarrow]}>
         <View style={s.brandRow}>
           <View style={s.logoDot} />
-          <Text style={s.brand}>CLOSE YOUR LOOPS NOOB</Text>
-          <Text style={s.brandSub}>· dashboard</Text>
+          <Text style={s.brand} numberOfLines={1}>CLOSE YOUR LOOPS NOOB</Text>
+          {!narrow && <Text style={s.brandSub}>· dashboard</Text>}
         </View>
-        <View style={s.topbarRight}>
+        <View style={[s.topbarRight, narrow && s.topbarRightNarrow]}>
           <Pressable
             onPress={() => setNewTaskOpen((open) => !open)}
             style={({ pressed }) => [s.newTaskTrigger, pressed && { opacity: 0.85 }]}
@@ -75,9 +81,9 @@ export default function DashboardScreen() {
         </View>
       </View>
 
-      {/* Body: main area + right sidebar */}
-      <View style={s.body}>
-        <View style={s.main}>
+      {/* Body: main area + right sidebar (the rail folds away on phones) */}
+      <View style={[s.body, narrow && s.bodyNarrow]}>
+        <View style={[s.main, narrow && s.mainNarrow]}>
           {tasksQuery.isLoading ? (
             <Text style={s.muted}>Loading…</Text>
           ) : tasksQuery.isError ? (
@@ -88,29 +94,31 @@ export default function DashboardScreen() {
               onAdd={() => setNewTaskOpen(true)}
             />
           ) : view === 'kanban' ? (
-            <KanbanBoard tasks={tasks} ownerId={ownerId} onEdit={setEditingTask} />
+            <KanbanBoard tasks={tasks} ownerId={ownerId} onEdit={setEditingTask} narrow={narrow} />
           ) : (
             <ListView tasks={tasks} ownerId={ownerId} onEdit={setEditingTask} />
           )}
         </View>
 
-        <View style={s.sidebar}>
-          <Text style={s.sidebarHeading}>TODAY</Text>
-          {nextQuery.data?.current ? (
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {[nextQuery.data.current, ...nextQuery.data.up_next].map((task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  ownerId={ownerId}
-                  onEdit={setEditingTask}
-                />
-              ))}
-            </ScrollView>
-          ) : (
-            <Text style={s.muted}>Nothing scheduled right now.</Text>
-          )}
-        </View>
+        {!narrow && (
+          <View style={s.sidebar}>
+            <Text style={s.sidebarHeading}>TODAY</Text>
+            {nextQuery.data?.current ? (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {[nextQuery.data.current, ...nextQuery.data.up_next].map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    ownerId={ownerId}
+                    onEdit={setEditingTask}
+                  />
+                ))}
+              </ScrollView>
+            ) : (
+              <Text style={s.muted}>Nothing scheduled right now.</Text>
+            )}
+          </View>
+        )}
       </View>
 
       {/* Task popover — handles both create and edit. */}
@@ -126,10 +134,52 @@ export default function DashboardScreen() {
 }
 
 function KanbanBoard({
-  tasks, ownerId, onEdit,
-}: { tasks: TaskOut[]; ownerId: 1 | 2; onEdit: (task: TaskOut) => void }) {
+  tasks, ownerId, onEdit, narrow,
+}: { tasks: TaskOut[]; ownerId: 1 | 2; onEdit: (task: TaskOut) => void; narrow: boolean }) {
   const buckets: Record<string, TaskOut[]> = Object.fromEntries(COLUMNS.map((col) => [col.key, []]));
   for (const task of tasks) buckets[columnFor(task.status)].push(task);
+
+  // Phone: one column at a time, navigated by a horizontal tab strip.
+  const [activeCol, setActiveCol] = useState<ColumnKey>('up_next');
+  if (narrow) {
+    const active = COLUMNS.find((col) => col.key === activeCol) ?? COLUMNS[0];
+    return (
+      <View style={s.mobileBoard}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.colTabs}
+          style={s.colTabsScroll}
+        >
+          {COLUMNS.map((col) => {
+            const on = col.key === active.key;
+            return (
+              <Pressable
+                key={col.key}
+                onPress={() => setActiveCol(col.key)}
+                style={[s.colTab, on && s.colTabOn]}
+              >
+                <Text style={[s.colTabText, on && s.colTabTextOn]}>{col.label}</Text>
+                <Text style={[s.colTabCount, on && s.colTabCountOn]}>{buckets[col.key].length}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+        <View style={s.mobileColumn}>
+          {active.key === 'whiteboard' && <WhiteboardCapture ownerId={ownerId} />}
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.columnBody}>
+            {buckets[active.key].length === 0 ? (
+              <Text style={s.columnEmpty}>Nothing here yet.</Text>
+            ) : (
+              buckets[active.key].map((task) => (
+                <TaskCard key={task.id} task={task} ownerId={ownerId} onEdit={onEdit} />
+              ))
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={s.columns}>
@@ -554,11 +604,17 @@ const s = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: c.border,
   },
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: sp.sm },
+  topbarNarrow: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: sp.sm,
+  },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: sp.sm, flexShrink: 1 },
   logoDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: c.accent },
-  brand: { ...t.hud, color: c.text },
+  brand: { ...t.hud, color: c.text, flexShrink: 1 },
   brandSub: { ...t.hud, color: c.textFaint },
   topbarRight: { flexDirection: 'row', alignItems: 'center', gap: sp.lg },
+  topbarRightNarrow: { flexWrap: 'wrap', rowGap: sp.sm, gap: sp.md },
   viewToggle: {
     flexDirection: 'row',
     borderWidth: 1,
@@ -733,7 +789,9 @@ const s = StyleSheet.create({
   emptyCtaText: { ...t.button, color: c.textOnAccent },
 
   body: { flex: 1, flexDirection: 'row' },
+  bodyNarrow: { flexDirection: 'column' },
   main: { flex: 1, padding: sp.lg },
+  mainNarrow: { padding: sp.md },
   sidebar: {
     width: 320,
     padding: sp.lg,
@@ -742,6 +800,35 @@ const s = StyleSheet.create({
     backgroundColor: c.bg,
   },
   sidebarHeading: { ...t.hud, color: c.accent, marginBottom: sp.md },
+
+  // Phone single-column board
+  mobileBoard: { flex: 1, gap: sp.sm },
+  colTabsScroll: { flexGrow: 0 },
+  colTabs: { flexDirection: 'row', gap: sp.xs, paddingBottom: sp.xs },
+  colTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sp.xs,
+    paddingHorizontal: sp.md,
+    paddingVertical: sp.sm,
+    borderRadius: r.pill,
+    borderWidth: 1,
+    borderColor: c.border,
+    backgroundColor: '#0f141b',
+  },
+  colTabOn: { borderColor: c.accent, backgroundColor: c.surface },
+  colTabText: { ...t.duration, color: c.textDim },
+  colTabTextOn: { color: c.accent },
+  colTabCount: { ...t.micro, color: c.textFaint },
+  colTabCountOn: { color: c.accent },
+  mobileColumn: {
+    flex: 1,
+    backgroundColor: '#0f141b',
+    borderRadius: r.lg,
+    borderWidth: 1,
+    borderColor: c.border,
+    padding: sp.sm,
+  },
 
   columns: { flex: 1, flexDirection: 'row', gap: sp.md },
   column: {
