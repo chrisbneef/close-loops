@@ -128,12 +128,19 @@ export default function ReportsScreen() {
             {data.rows.length > 0 && (
               <Section title="COMPLETED">
                 {data.rows.map((row) => (
-                  <View key={row.task_id} style={s.doneRow}>
-                    <Text style={s.doneTitle} numberOfLines={1}>{row.title}</Text>
-                    <Text style={s.doneMeta}>
-                      {fmtMinutes(row.actual_minutes)}
-                      {row.on_time === false ? '  late' : row.on_time === true ? '  ✓' : ''}
-                    </Text>
+                  <View key={row.task_id} style={s.doneItem}>
+                    <View style={s.doneRow}>
+                      <Text style={s.doneTitle} numberOfLines={1}>{row.title}</Text>
+                      <Text style={s.doneMeta}>
+                        {fmtMinutes(row.actual_minutes)}
+                        {row.on_time === false ? '  late' : row.on_time === true ? '  ✓' : ''}
+                      </Text>
+                    </View>
+                    {row.completion_notes && (
+                      <Text style={s.doneNotes} numberOfLines={3}>
+                        ↳ {row.completion_notes}
+                      </Text>
+                    )}
                   </View>
                 ))}
               </Section>
@@ -230,8 +237,10 @@ const s = StyleSheet.create({
   distraction: { ...t.taskTitle, color: c.text },
   reasonRow: { ...t.taskMeta, color: c.textDim },
 
-  doneRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 3, gap: sp.sm },
+  doneItem: { paddingVertical: 3, gap: 2 },
+  doneRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: sp.sm },
   doneTitle: { ...t.subtask, color: c.textDim, flex: 1 },
+  doneNotes: { ...t.taskMeta, color: c.text, paddingLeft: sp.md },
   doneMeta: { ...t.duration, color: c.textFaint },
 
   muted: { ...t.taskMeta, color: c.textDim },

@@ -71,6 +71,7 @@ export interface ReportRow {
   deadline: string | null;
   on_time: boolean | null;
   over_estimate_ratio: number;
+  completion_notes: string | null;
 }
 
 export interface OpenTaskRow {
@@ -205,7 +206,7 @@ export const api = {
   // (in_progress/paused/done) must use start/pause/done — server 409s otherwise.
   patchTask(
     taskId: number,
-    fields: Partial<{ title: string; importance: number; est_minutes: number; deadline: string; description: string; status: 'whiteboard' | 'pending' | 'scheduled' }>,
+    fields: Partial<{ title: string; importance: number; est_minutes: number; deadline: string; description: string; owner_id: number; status: 'whiteboard' | 'pending' | 'scheduled' }>,
   ): Promise<TaskOut> {
     return jsonRequest<TaskOut>(`/tasks/${taskId}`, {
       method: 'PATCH',
@@ -225,9 +226,12 @@ export const api = {
     return jsonRequest<TaskOut>(`/tasks/${taskId}/resume`, { method: 'POST' });
   },
   // /done returns the new NextAction so the UI can flip without a second poll.
-  completeTask(taskId: number): Promise<NextActionResponse> {
+  // `notes` lands in execution_log.completion_notes and shows in reports.
+  completeTask(taskId: number, notes?: string): Promise<NextActionResponse> {
+    const trimmed = notes?.trim();
     return jsonRequest<NextActionResponse>(`/tasks/${taskId}/done`, {
       method: 'POST',
+      body: trimmed ? JSON.stringify({ completion_notes: trimmed }) : undefined,
     });
   },
   getGamification(ownerId: number): Promise<GamificationOut> {

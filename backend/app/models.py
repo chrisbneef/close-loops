@@ -290,6 +290,9 @@ class ExecutionLog(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     scheduled_for: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    # What the user wrote in the "completion notes" prompt when they marked
+    # the task done — usually a Drive link to the deliverable, plus context.
+    completion_notes: Mapped[Optional[str]] = mapped_column(Text)
 
     __table_args__ = (
         Index("ix_execution_log_user", "user_id"),

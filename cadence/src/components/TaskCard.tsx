@@ -41,6 +41,8 @@ export function TaskCard({
   const [expanded, setExpanded] = useState(false);
   const [askReason, setAskReason] = useState(false);
   const [reason, setReason] = useState('');
+  const [askNotes, setAskNotes] = useState(false);
+  const [notes, setNotes] = useState('');
   const move = useTaskMove(ownerId);
   const col = columnFor(task.status);
 
@@ -54,13 +56,19 @@ export function TaskCard({
   const subTotal = task.subtasks.length;
   const dl = deadlineLabel(task.deadline);
 
-  const doMove = (target: ColumnKey, r?: string) => move.mutate({ task, target, reason: r });
+  const doMove = (target: ColumnKey, r?: string, n?: string) =>
+    move.mutate({ task, target, reason: r, notes: n });
   const submitPause = () => {
     const txt = reason.trim();
     if (!txt) return;
     doMove('paused', txt);
     setAskReason(false);
     setReason('');
+  };
+  const submitDone = () => {
+    move.mutate({ task, target: 'done', notes: notes.trim() || undefined });
+    setAskNotes(false);
+    setNotes('');
   };
 
   return (
@@ -127,6 +135,25 @@ export function TaskCard({
             <Text style={s.moveText}>✕</Text>
           </Pressable>
         </View>
+      ) : askNotes ? (
+        <View style={s.reasonRow}>
+          <TextInput
+            value={notes}
+            onChangeText={setNotes}
+            onSubmitEditing={submitDone}
+            placeholder="add a link or note (optional)"
+            placeholderTextColor={c.textFaint}
+            style={s.reasonInput}
+            autoFocus
+            returnKeyType="done"
+          />
+          <Pressable onPress={submitDone} style={[s.moveBtn, s.moveBtnDone]}>
+            <Text style={[s.moveText, { color: c.textOnAccent }]}>✓ Done</Text>
+          </Pressable>
+          <Pressable onPress={() => { setAskNotes(false); setNotes(''); }} style={s.moveBtn}>
+            <Text style={s.moveText}>✕</Text>
+          </Pressable>
+        </View>
       ) : (
         <View style={s.moves}>
           {col === 'whiteboard' && (
@@ -142,7 +169,7 @@ export function TaskCard({
             <MoveBtn label="▶ Resume" primary onPress={() => doMove('in_progress')} />
           )}
           {(col === 'whiteboard' || col === 'up_next' || col === 'in_progress' || col === 'paused') && (
-            <MoveBtn label="✓ Done" done onPress={() => doMove('done')} />
+            <MoveBtn label="✓ Done" done onPress={() => setAskNotes(true)} />
           )}
           {col === 'up_next' && (
             <MoveBtn label="⬚ Park" onPress={() => doMove('whiteboard')} />

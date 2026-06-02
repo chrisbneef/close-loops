@@ -109,6 +109,7 @@ def _completed(session: Session, owner_id: int, start: datetime, end: datetime) 
             deadline=deadline, scheduled_for=_as_utc(log.scheduled_for),
             started_at=_as_utc(log.started_at), finished_at=finished,
             on_time=on_time, over_estimate_ratio=round(ratio, 3),
+            completion_notes=log.completion_notes,
         ))
 
     longest = max(report_rows, key=lambda r: r.actual_minutes - r.estimated_minutes) if report_rows else None

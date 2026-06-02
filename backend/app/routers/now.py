@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_session
 from app.models import CalendarBlock, ExecutionLog, Interruption, Task, TaskSubtask
-from app.schemas import NextActionResponse, PauseRequest, SubtaskOut, TaskOut
+from app.schemas import CompleteRequest, NextActionResponse, PauseRequest, SubtaskOut, TaskOut
 from app.services import gamification, presence, reschedule
 
 logger = logging.getLogger(__name__)
@@ -174,7 +174,11 @@ def resume_task(task_id: int, session: Session = Depends(get_session)) -> TaskOu
 
 
 @router.post("/tasks/{task_id}/done", response_model=NextActionResponse)
-def complete_task(task_id: int, session: Session = Depends(get_session)) -> NextActionResponse:
+def complete_task(
+    task_id: int,
+    body: Optional[CompleteRequest] = None,
+    session: Session = Depends(get_session),
+) -> NextActionResponse:
     """User hit Done. Stamp finished_at, log actual_minutes to execution_log
     (feeds the temporal correction factor), trigger a reschedule, and return
     the new /next-action so the UI can flip to the next thing without a
@@ -206,6 +210,7 @@ def complete_task(task_id: int, session: Session = Depends(get_session)) -> Next
     ).scalar_one_or_none()
     scheduled_for = block.start if block else None
 
+    notes = (body.completion_notes or "").strip() or None if body else None
     session.add(
         ExecutionLog(
             task_id=task.id,
@@ -215,6 +220,7 @@ def complete_task(task_id: int, session: Session = Depends(get_session)) -> Next
             started_at=task.started_at,
             finished_at=now,
             scheduled_for=scheduled_for,
+            completion_notes=notes,
         )
     )
     gamification.award_done(session, task.owner_id, now=now)

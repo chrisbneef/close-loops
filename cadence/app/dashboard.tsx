@@ -16,6 +16,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api, type TaskOut } from '@/src/api';
 import { useAuth } from '@/src/auth-store';
+import { DateField } from '@/src/components/DateField';
 import { OwnerSwitcher } from '@/src/components/OwnerSwitcher';
 import { TaskCard } from '@/src/components/TaskCard';
 import { COLUMNS, columnFor } from '@/src/components/move-task';
@@ -201,12 +202,33 @@ function TaskModal({
   const [description, setDescription] = useState(editingTask?.description ?? '');
   const [mins, setMins] = useState(String(editingTask?.est_minutes ?? 25));
   const [importance, setImportance] = useState(editingTask?.importance ?? 5);
+  // Who the task is assigned to — defaults to the existing task's owner when
+  // editing, or to the dashboard's currently-viewed owner when creating.
+  const [assignedTo, setAssignedTo] = useState<1 | 2>(
+    ((editingTask?.owner_id ?? ownerId) as 1 | 2)
+  );
   // YYYY-MM-DD; sliced from the ISO string if editing.
   const [deadline, setDeadline] = useState(
     editingTask?.deadline ? editingTask.deadline.slice(0, 10) : ''
   );
   const [subtasks, setSubtasks] = useState<string[]>([]);  // staged subtasks (create mode only)
   const [newSubtask, setNewSubtask] = useState('');
+
+  const invalidateBoards = () => {
+    // Invalidate both the current viewer's board and the assignee's board so
+    // a cross-cofounder assignment shows up immediately on whichever side is
+    // being looked at.
+    qc.invalidateQueries({ queryKey: ['tasks', ownerId] });
+    qc.invalidateQueries({ queryKey: ['next-action', ownerId] });
+    if (assignedTo !== ownerId) {
+      qc.invalidateQueries({ queryKey: ['tasks', assignedTo] });
+      qc.invalidateQueries({ queryKey: ['next-action', assignedTo] });
+    }
+    if (editingTask && editingTask.owner_id !== assignedTo) {
+      qc.invalidateQueries({ queryKey: ['tasks', editingTask.owner_id] });
+      qc.invalidateQueries({ queryKey: ['next-action', editingTask.owner_id] });
+    }
+  };
 
   const create = useMutation({
     mutationFn: async () => {
@@ -215,7 +237,7 @@ function TaskModal({
       const deadlineIso = deadline
         ? new Date(`${deadline}T23:59:59`).toISOString()
         : undefined;
-      const task = await api.createTask(ownerId, title.trim(), {
+      const task = await api.createTask(assignedTo, title.trim(), {
         estMinutes: parseInt(mins, 10) || 25,
         importance,
         description: description.trim() || undefined,
@@ -227,11 +249,7 @@ function TaskModal({
       }
       return task;
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['tasks', ownerId] });
-      qc.invalidateQueries({ queryKey: ['next-action', ownerId] });
-      onClose();
-    },
+    onSuccess: () => { invalidateBoards(); onClose(); },
   });
 
   const update = useMutation({
@@ -245,13 +263,10 @@ function TaskModal({
         est_minutes: parseInt(mins, 10) || 25,
         importance,
         ...(deadlineIso ? { deadline: deadlineIso } : {}),
+        ...(assignedTo !== editingTask!.owner_id ? { owner_id: assignedTo } : {}),
       });
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['tasks', ownerId] });
-      qc.invalidateQueries({ queryKey: ['next-action', ownerId] });
-      onClose();
-    },
+    onSuccess: () => { invalidateBoards(); onClose(); },
   });
 
   const busy = isEdit ? update.isPending : create.isPending;
@@ -283,6 +298,12 @@ function TaskModal({
         </View>
 
         <ScrollView style={s.modalBody} contentContainerStyle={{ gap: sp.md }}>
+          {/* Assign to */}
+          <View style={s.field}>
+            <Text style={s.fieldLabel}>ASSIGN TO</Text>
+            <OwnerSwitcher active={assignedTo} onChange={setAssignedTo} />
+          </View>
+
           {/* Title */}
           <View style={s.field}>
             <Text style={s.fieldLabel}>TITLE</Text>
@@ -349,16 +370,13 @@ function TaskModal({
             </View>
           </View>
 
-          {/* Deadline */}
+          {/* Deadline — native calendar picker on web */}
           <View style={s.field}>
             <Text style={s.fieldLabel}>DEADLINE (optional)</Text>
-            <TextInput
+            <DateField
               value={deadline}
-              onChangeText={setDeadline}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={c.textFaint}
+              onChange={setDeadline}
               style={[s.input, { width: 200 }]}
-              inputMode="numeric"
             />
           </View>
 

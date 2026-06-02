@@ -34,14 +34,16 @@ export function columnFor(status: TaskOut['status']): ColumnKey {
 export function useTaskMove(ownerId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ task, target, reason }: { task: TaskOut; target: ColumnKey; reason?: string }) => {
+    mutationFn: async ({
+      task, target, reason, notes,
+    }: { task: TaskOut; target: ColumnKey; reason?: string; notes?: string }) => {
       switch (target) {
         case 'in_progress':
           return task.status === 'paused' ? api.resumeTask(task.id) : api.startTask(task.id);
         case 'paused':
           return api.pauseTask(task.id, reason ?? 'paused from board');
         case 'done':
-          return api.completeTask(task.id);
+          return api.completeTask(task.id, notes);
         case 'whiteboard':
           return api.patchTask(task.id, { status: 'whiteboard' });
         case 'up_next':

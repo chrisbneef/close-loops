@@ -110,6 +110,13 @@ class PauseRequest(BaseModel):
     )
 
 
+class CompleteRequest(BaseModel):
+    """Optional payload for POST /tasks/{id}/done — completion notes for the
+    report (e.g., 'Drive folder: <link>')."""
+
+    completion_notes: Optional[str] = Field(None, max_length=2000)
+
+
 class LoginRequest(BaseModel):
     email: str = Field(..., min_length=3, max_length=255)
     password: str = Field(..., min_length=1, max_length=200)
@@ -201,6 +208,7 @@ class TaskUpdate(BaseModel):
     est_minutes: Optional[int] = Field(None, ge=5, le=480)
     deadline: Optional[datetime] = None
     description: Optional[str] = Field(None, max_length=5000)
+    owner_id: Optional[int] = Field(None, description="Reassign the task to a different cofounder.")
     status: Optional[Literal["whiteboard", "pending", "scheduled"]] = Field(
         None,
         description="Only backward/neutral moves (incl. parking to 'whiteboard'). "
@@ -271,6 +279,9 @@ class ReportRow(BaseModel):
     over_estimate_ratio: float = Field(
         ...,
         description="actual_minutes / estimated_minutes. 1.0 = on estimate, 1.5 = 50% over.",
+    )
+    completion_notes: Optional[str] = Field(
+        None, description="What the user wrote when they marked the task done."
     )
 
 

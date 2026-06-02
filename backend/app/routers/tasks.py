@@ -153,6 +153,13 @@ def patch_task(
         task.deadline = body.deadline
     if body.description is not None:
         task.description = body.description
+    reassigned = False
+    if body.owner_id is not None and body.owner_id != task.owner_id:
+        new_owner = session.get(User, body.owner_id)
+        if new_owner is None:
+            raise HTTPException(status_code=404, detail=f"owner_id={body.owner_id} not found")
+        task.owner_id = body.owner_id
+        reassigned = True
 
     moved = False
     if body.status is not None and body.status != task.status:
@@ -187,7 +194,9 @@ def patch_task(
     session.commit()
     session.refresh(task)
 
-    if moved:
-        reschedule.request_reschedule_for_owner(task.owner_id, reason=f"patch task {task_id} → {task.status}")
+    if moved or reassigned:
+        reschedule.request_reschedule_for_owner(
+            task.owner_id, reason=f"patch task {task_id} → {task.status}",
+        )
 
     return _with_subtasks(session, [task])[0]
