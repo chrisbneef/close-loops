@@ -1,17 +1,17 @@
 /**
  * Time-tracking correction modal — opens when you click the ⏱ icon on a
- * completed-task card. Lets you fix the total worked minutes plus the
- * duration and reason of every pause recorded against that task, for when
- * you forgot to hit Start / Done / Resume at the right moment.
+ * completed-task card. Lets you fix every recorded timestamp on the task:
+ * when you Started, when each pause was Paused / Resumed (plus the reason),
+ * and when you marked it Completed. The footer shows the derived
+ * wall-clock / pauses / focus totals so you can sanity-check your edits.
  *
  * Wire shape:
- *   • Total time: PATCH /execution-log/{id} with actual_minutes
- *   • Each pause: PATCH /interruptions/{id} with resumed_at recomputed
- *     from (original paused_at + new duration) + the edited reason
+ *   • Execution log: PATCH /execution-log/{id} with started_at + finished_at
+ *     (the handler recomputes actual_minutes from those bounds).
+ *   • Each pause:   PATCH /interruptions/{id} with paused_at / resumed_at
+ *     and the reason text.
  *
- * Editing paused_at moments directly (the actual clock time the pause
- * started) is intentionally out of scope for v1 — what matters for the
- * weekly report is total time and pause durations, not exact moments.
+ * Only fields that actually changed are sent — unchanged rows are skipped.
  */
 
 import { useEffect, useState } from 'react';
@@ -20,25 +20,37 @@ import {
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { api, type InterruptionOut, type TaskOut } from '@/src/api';
+import { api, type TaskOut } from '@/src/api';
+import { DateTimeField } from '@/src/components/DateTimeField';
 import {
   widgetColors as c, widgetRadii as r, widgetSpacing as sp, widgetType as t,
 } from '@/src/widget-theme';
 
 interface EditablePause {
   id: number;
-  paused_at: string;            // ISO — not edited, used to recompute resumed_at
-  durationMin: string;          // editable as string (numeric input)
-  reason: string;               // editable
-  originalDuration: number;     // for change detection
-  originalReason: string;       // for change detection
+  pausedAt: string;
+  resumedAt: string;
+  reason: string;
+  // Originals — used to detect what actually changed and to drive the
+  // sparse PATCH payload.
+  origPausedAt: string;
+  origResumedAt: string;
+  origReason: string;
 }
 
-function pauseDurationMin(p: InterruptionOut): number {
-  if (!p.resumed_at) return 0;
-  return Math.max(0, Math.round(
-    (new Date(p.resumed_at).getTime() - new Date(p.paused_at).getTime()) / 60_000
-  ));
+function minutesBetween(a: string, b: string): number {
+  if (!a || !b) return 0;
+  const t1 = new Date(a).getTime();
+  const t2 = new Date(b).getTime();
+  if (isNaN(t1) || isNaN(t2) || t2 <= t1) return 0;
+  return Math.round((t2 - t1) / 60_000);
+}
+
+function fmtMins(mins: number): string {
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
 }
 
 export function TimeEditModal({
@@ -51,57 +63,57 @@ export function TimeEditModal({
   });
 
   const log = timing.data?.execution_log ?? null;
-  const [actualMin, setActualMin] = useState<string>('');
-  const [originalActualMin, setOriginalActualMin] = useState<number>(0);
+
+  // Editable execution-log timestamps.
+  const [startedAt, setStartedAt] = useState('');
+  const [finishedAt, setFinishedAt] = useState('');
+  const [origStartedAt, setOrigStartedAt] = useState('');
+  const [origFinishedAt, setOrigFinishedAt] = useState('');
+
+  // Editable pause rows.
   const [pauses, setPauses] = useState<EditablePause[]>([]);
 
-  // Hydrate local edit state once the query returns.
   useEffect(() => {
     if (!timing.data) return;
     if (timing.data.execution_log) {
-      setActualMin(String(timing.data.execution_log.actual_minutes));
-      setOriginalActualMin(timing.data.execution_log.actual_minutes);
+      setStartedAt(timing.data.execution_log.started_at);
+      setFinishedAt(timing.data.execution_log.finished_at);
+      setOrigStartedAt(timing.data.execution_log.started_at);
+      setOrigFinishedAt(timing.data.execution_log.finished_at);
     }
-    setPauses(timing.data.interruptions.map((p) => {
-      const dur = pauseDurationMin(p);
-      return {
-        id: p.id,
-        paused_at: p.paused_at,
-        durationMin: String(dur),
-        reason: p.reason,
-        originalDuration: dur,
-        originalReason: p.reason,
-      };
-    }));
+    setPauses(timing.data.interruptions.map((p) => ({
+      id: p.id,
+      pausedAt: p.paused_at,
+      resumedAt: p.resumed_at ?? '',
+      reason: p.reason,
+      origPausedAt: p.paused_at,
+      origResumedAt: p.resumed_at ?? '',
+      origReason: p.reason,
+    })));
   }, [timing.data]);
 
   const save = useMutation({
     mutationFn: async () => {
-      // 1. Update execution_log if total changed.
-      if (log && parseInt(actualMin, 10) !== originalActualMin) {
-        const n = parseInt(actualMin, 10);
-        if (!Number.isNaN(n) && n >= 0) {
-          await api.patchExecutionLog(log.id, { actual_minutes: n });
+      // 1. Execution log if either bound moved.
+      if (log) {
+        const fields: { started_at?: string; finished_at?: string } = {};
+        if (startedAt !== origStartedAt) fields.started_at = startedAt;
+        if (finishedAt !== origFinishedAt) fields.finished_at = finishedAt;
+        if (Object.keys(fields).length > 0) {
+          await api.patchExecutionLog(log.id, fields);
         }
       }
-      // 2. Update each interruption that changed.
+      // 2. Each pause: only send the fields that changed.
       for (const p of pauses) {
-        const newDur = parseInt(p.durationMin, 10);
-        const durationChanged =
-          !Number.isNaN(newDur) && newDur >= 0 && newDur !== p.originalDuration;
-        const reasonChanged = p.reason.trim() !== p.originalReason && p.reason.trim() !== '';
-
-        if (!durationChanged && !reasonChanged) continue;
-
-        const fields: { resumed_at?: string; reason?: string } = {};
-        if (durationChanged) {
-          const newResumed = new Date(
-            new Date(p.paused_at).getTime() + newDur * 60_000,
-          ).toISOString();
-          fields.resumed_at = newResumed;
+        const fields: { paused_at?: string; resumed_at?: string; reason?: string } = {};
+        if (p.pausedAt !== p.origPausedAt) fields.paused_at = p.pausedAt;
+        if (p.resumedAt !== p.origResumedAt && p.resumedAt) fields.resumed_at = p.resumedAt;
+        if (p.reason.trim() !== p.origReason && p.reason.trim() !== '') {
+          fields.reason = p.reason.trim();
         }
-        if (reasonChanged) fields.reason = p.reason.trim();
-        await api.patchInterruption(p.id, fields);
+        if (Object.keys(fields).length > 0) {
+          await api.patchInterruption(p.id, fields);
+        }
       }
     },
     onSuccess: () => {
@@ -115,7 +127,13 @@ export function TimeEditModal({
   const updatePause = (idx: number, patch: Partial<EditablePause>) =>
     setPauses((prev) => prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)));
 
-  const totalPauseMin = pauses.reduce((sum, p) => sum + (parseInt(p.durationMin, 10) || 0), 0);
+  // Derived totals. Wall clock = end - start; pauses sum durations; focus =
+  // wall clock minus pause total (clamped to non-negative).
+  const wallClock = minutesBetween(startedAt, finishedAt);
+  const totalPause = pauses.reduce(
+    (sum, p) => sum + minutesBetween(p.pausedAt, p.resumedAt), 0,
+  );
+  const focus = Math.max(0, wallClock - totalPause);
 
   return (
     <View style={s.backdrop}>
@@ -137,58 +155,76 @@ export function TimeEditModal({
             <>
               <Text style={s.taskLine} numberOfLines={2}>{task.title}</Text>
 
-              {log ? (
-                <View style={s.field}>
-                  <Text style={s.label}>TOTAL TIME WORKED</Text>
-                  <View style={s.row}>
-                    <TextInput
-                      value={actualMin}
-                      onChangeText={(v) => setActualMin(v.replace(/[^0-9]/g, ''))}
-                      style={[s.input, { width: 80, textAlign: 'center' }]}
-                      inputMode="numeric"
-                    />
-                    <Text style={s.unit}>min</Text>
-                    <Text style={s.hint}>
-                      · originally {originalActualMin}m
-                    </Text>
-                  </View>
-                </View>
-              ) : (
+              {!log ? (
                 <Text style={s.muted}>
                   This task hasn't been marked done yet — no execution record
                   to edit. Mark it done first, then edit the time.
                 </Text>
-              )}
+              ) : (
+                <>
+                  <View style={s.field}>
+                    <Text style={s.label}>STARTED AT</Text>
+                    <DateTimeField value={startedAt} onChange={setStartedAt} />
+                  </View>
 
-              <View style={s.field}>
-                <Text style={s.label}>
-                  PAUSES ({pauses.length}) · total {totalPauseMin}m
-                </Text>
-                {pauses.length === 0 ? (
-                  <Text style={s.muted}>No pauses recorded on this task.</Text>
-                ) : (
-                  pauses.map((p, i) => (
-                    <View key={p.id} style={s.pauseRow}>
-                      <TextInput
-                        value={p.reason}
-                        onChangeText={(v) => updatePause(i, { reason: v })}
-                        placeholder="reason"
-                        placeholderTextColor={c.textFaint}
-                        style={[s.input, { flex: 1 }]}
-                      />
-                      <TextInput
-                        value={p.durationMin}
-                        onChangeText={(v) =>
-                          updatePause(i, { durationMin: v.replace(/[^0-9]/g, '') })
-                        }
-                        style={[s.input, { width: 60, textAlign: 'center' }]}
-                        inputMode="numeric"
-                      />
-                      <Text style={s.unit}>min</Text>
-                    </View>
-                  ))
-                )}
-              </View>
+                  {pauses.map((p, i) => {
+                    const dur = minutesBetween(p.pausedAt, p.resumedAt);
+                    return (
+                      <View key={p.id} style={s.pauseBlock}>
+                        <View style={s.pauseHead}>
+                          <Text style={s.label}>PAUSE {i + 1}</Text>
+                          <Text style={s.pauseDur}>{fmtMins(dur)}</Text>
+                        </View>
+                        <View style={s.field}>
+                          <Text style={s.sublabel}>Reason</Text>
+                          <TextInput
+                            value={p.reason}
+                            onChangeText={(v) => updatePause(i, { reason: v })}
+                            placeholder="why did you pause?"
+                            placeholderTextColor={c.textFaint}
+                            style={s.input}
+                          />
+                        </View>
+                        <View style={s.field}>
+                          <Text style={s.sublabel}>Paused at</Text>
+                          <DateTimeField
+                            value={p.pausedAt}
+                            onChange={(v) => updatePause(i, { pausedAt: v })}
+                          />
+                        </View>
+                        <View style={s.field}>
+                          <Text style={s.sublabel}>Resumed at</Text>
+                          <DateTimeField
+                            value={p.resumedAt}
+                            onChange={(v) => updatePause(i, { resumedAt: v })}
+                          />
+                        </View>
+                      </View>
+                    );
+                  })}
+
+                  {pauses.length === 0 && (
+                    <Text style={s.muted}>No pauses recorded on this task.</Text>
+                  )}
+
+                  <View style={s.field}>
+                    <Text style={s.label}>COMPLETED AT</Text>
+                    <DateTimeField value={finishedAt} onChange={setFinishedAt} />
+                  </View>
+
+                  <View style={s.totals}>
+                    <Text style={s.totalRow}>
+                      Wall clock <Text style={s.totalNum}>{fmtMins(wallClock)}</Text>
+                    </Text>
+                    <Text style={s.totalRow}>
+                      Pauses <Text style={s.totalNum}>{fmtMins(totalPause)}</Text>
+                    </Text>
+                    <Text style={[s.totalRow, s.totalFocus]}>
+                      Focus <Text style={s.totalNum}>{fmtMins(focus)}</Text>
+                    </Text>
+                  </View>
+                </>
+              )}
             </>
           )}
         </ScrollView>
@@ -227,7 +263,7 @@ const s = StyleSheet.create({
   },
   modal: {
     width: '100%',
-    maxWidth: 560,
+    maxWidth: 640,
     maxHeight: '90%',
     backgroundColor: c.surface,
     borderRadius: r.lg,
@@ -262,9 +298,7 @@ const s = StyleSheet.create({
 
   field: { gap: sp.xs },
   label: { ...t.micro, color: c.textFaint },
-  row: { flexDirection: 'row', alignItems: 'center', gap: sp.sm },
-  unit: { ...t.taskMeta, color: c.textDim },
-  hint: { ...t.taskMeta, color: c.textFaint },
+  sublabel: { ...t.micro, color: c.textFaint, fontSize: 9 },
 
   input: {
     ...t.subtask,
@@ -278,12 +312,31 @@ const s = StyleSheet.create({
     outlineStyle: 'none' as any,
   },
 
-  pauseRow: {
+  pauseBlock: {
+    gap: sp.xs,
+    padding: sp.sm,
+    borderRadius: r.md,
+    borderWidth: 1,
+    borderColor: c.border,
+    backgroundColor: c.bg,
+  },
+  pauseHead: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: sp.sm,
-    paddingVertical: 2,
+    justifyContent: 'space-between',
   },
+  pauseDur: { ...t.duration, color: c.textDim },
+
+  totals: {
+    marginTop: sp.sm,
+    paddingTop: sp.sm,
+    borderTopWidth: 1,
+    borderTopColor: c.border,
+    gap: 2,
+  },
+  totalRow: { ...t.taskMeta, color: c.textDim },
+  totalFocus: { ...t.taskTitle, color: c.text, marginTop: sp.xs },
+  totalNum: { fontFamily: 'JetBrainsMono_700Bold', color: c.accent },
 
   cancel: { paddingHorizontal: sp.lg, paddingVertical: sp.sm, borderRadius: r.sm },
   cancelText: { ...t.button, color: c.textDim },
