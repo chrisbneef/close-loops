@@ -111,6 +111,35 @@ export interface PeriodReport {
   memo: string | null;
 }
 
+export interface ExecutionLogOut {
+  id: number;
+  task_id: number;
+  user_id: number;
+  estimated_minutes: number;
+  actual_minutes: number;
+  started_at: string;
+  finished_at: string;
+  scheduled_for: string | null;
+  completion_notes: string | null;
+}
+
+export interface InterruptionOut {
+  id: number;
+  task_id: number;
+  user_id: number;
+  paused_at: string;
+  resumed_at: string | null;
+  reason: string;
+}
+
+export interface TimingResponse {
+  task_id: number;
+  task_status: string;
+  task_started_at: string | null;
+  execution_log: ExecutionLogOut | null;
+  interruptions: InterruptionOut[];
+}
+
 export interface GamificationOut {
   user_id: number;
   points: number;
@@ -262,6 +291,29 @@ export const api = {
     return jsonRequest<PartnerPresence | null>(
       `/presence/partner?owner_id=${ownerId}`,
     );
+  },
+
+  // -- edit time --
+  getTaskTiming(taskId: number): Promise<TimingResponse> {
+    return jsonRequest<TimingResponse>(`/tasks/${taskId}/timing`);
+  },
+  patchExecutionLog(
+    logId: number,
+    fields: Partial<{ actual_minutes: number; started_at: string; finished_at: string; completion_notes: string }>,
+  ): Promise<ExecutionLogOut> {
+    return jsonRequest<ExecutionLogOut>(`/execution-log/${logId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(fields),
+    });
+  },
+  patchInterruption(
+    intrId: number,
+    fields: Partial<{ paused_at: string; resumed_at: string; reason: string }>,
+  ): Promise<InterruptionOut> {
+    return jsonRequest<InterruptionOut>(`/interruptions/${intrId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(fields),
+    });
   },
 
   // -- subtasks (widget) --

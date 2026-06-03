@@ -21,6 +21,7 @@ import { useAuth } from '@/src/auth-store';
 import { DateField } from '@/src/components/DateField';
 import { OwnerSwitcher } from '@/src/components/OwnerSwitcher';
 import { TaskCard } from '@/src/components/TaskCard';
+import { TimeEditModal } from '@/src/components/TimeEditModal';
 import { COLUMNS, columnFor, type ColumnKey } from '@/src/components/move-task';
 import {
   widgetColors as c, widgetRadii as r, widgetSpacing as sp, widgetType as t,
@@ -39,6 +40,7 @@ export default function DashboardScreen() {
   const [view, setView] = useState<ViewMode>('kanban');
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<TaskOut | null>(null);
+  const [editingTimeTask, setEditingTimeTask] = useState<TaskOut | null>(null);
 
   const tasksQuery = useQuery({
     queryKey: ['tasks', ownerId],
@@ -94,9 +96,18 @@ export default function DashboardScreen() {
               onAdd={() => setNewTaskOpen(true)}
             />
           ) : view === 'kanban' ? (
-            <KanbanBoard tasks={tasks} ownerId={ownerId} onEdit={setEditingTask} narrow={narrow} />
+            <KanbanBoard
+              tasks={tasks} ownerId={ownerId}
+              onEdit={setEditingTask}
+              onEditTime={setEditingTimeTask}
+              narrow={narrow}
+            />
           ) : (
-            <ListView tasks={tasks} ownerId={ownerId} onEdit={setEditingTask} />
+            <ListView
+              tasks={tasks} ownerId={ownerId}
+              onEdit={setEditingTask}
+              onEditTime={setEditingTimeTask}
+            />
           )}
         </View>
 
@@ -129,13 +140,27 @@ export default function DashboardScreen() {
           onClose={() => { setNewTaskOpen(false); setEditingTask(null); }}
         />
       )}
+
+      {/* Edit Time popover — opens when ⏱ is tapped on a Done card. */}
+      {editingTimeTask && (
+        <TimeEditModal
+          task={editingTimeTask}
+          onClose={() => setEditingTimeTask(null)}
+        />
+      )}
     </View>
   );
 }
 
 function KanbanBoard({
-  tasks, ownerId, onEdit, narrow,
-}: { tasks: TaskOut[]; ownerId: 1 | 2; onEdit: (task: TaskOut) => void; narrow: boolean }) {
+  tasks, ownerId, onEdit, onEditTime, narrow,
+}: {
+  tasks: TaskOut[];
+  ownerId: 1 | 2;
+  onEdit: (task: TaskOut) => void;
+  onEditTime: (task: TaskOut) => void;
+  narrow: boolean;
+}) {
   const buckets: Record<string, TaskOut[]> = Object.fromEntries(COLUMNS.map((col) => [col.key, []]));
   for (const task of tasks) buckets[columnFor(task.status)].push(task);
 
@@ -172,7 +197,7 @@ function KanbanBoard({
               <Text style={s.columnEmpty}>Nothing here yet.</Text>
             ) : (
               buckets[active.key].map((task) => (
-                <TaskCard key={task.id} task={task} ownerId={ownerId} onEdit={onEdit} />
+                <TaskCard key={task.id} task={task} ownerId={ownerId} onEdit={onEdit} onEditTime={onEditTime} />
               ))
             )}
           </ScrollView>
@@ -195,7 +220,7 @@ function KanbanBoard({
               <Text style={s.columnEmpty}>—</Text>
             ) : (
               buckets[col.key].map((task) => (
-                <TaskCard key={task.id} task={task} ownerId={ownerId} onEdit={onEdit} />
+                <TaskCard key={task.id} task={task} ownerId={ownerId} onEdit={onEdit} onEditTime={onEditTime} />
               ))
             )}
           </ScrollView>
@@ -206,8 +231,13 @@ function KanbanBoard({
 }
 
 function ListView({
-  tasks, ownerId, onEdit,
-}: { tasks: TaskOut[]; ownerId: 1 | 2; onEdit: (task: TaskOut) => void }) {
+  tasks, ownerId, onEdit, onEditTime,
+}: {
+  tasks: TaskOut[];
+  ownerId: 1 | 2;
+  onEdit: (task: TaskOut) => void;
+  onEditTime: (task: TaskOut) => void;
+}) {
   const buckets: Record<string, TaskOut[]> = Object.fromEntries(COLUMNS.map((col) => [col.key, []]));
   for (const task of tasks) buckets[columnFor(task.status)].push(task);
 
@@ -220,7 +250,7 @@ function ListView({
               {col.label} · {buckets[col.key].length}
             </Text>
             {buckets[col.key].map((task) => (
-              <TaskCard key={task.id} task={task} ownerId={ownerId} onEdit={onEdit} />
+              <TaskCard key={task.id} task={task} ownerId={ownerId} onEdit={onEdit} onEditTime={onEditTime} />
             ))}
           </View>
         ),

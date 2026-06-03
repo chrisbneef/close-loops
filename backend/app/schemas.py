@@ -155,6 +155,53 @@ class InterruptionOut(BaseModel):
     reason: str
 
 
+class InterruptionUpdate(BaseModel):
+    """Patch a single pause record — used by the Edit Time modal when you
+    forgot to hit Resume or want to fix a pause's reason after the fact."""
+
+    paused_at: Optional[datetime] = None
+    resumed_at: Optional[datetime] = None
+    reason: Optional[str] = Field(None, min_length=1, max_length=500)
+
+
+class ExecutionLogOut(BaseModel):
+    """One completed-task run as recorded in execution_log."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    task_id: int
+    user_id: int
+    estimated_minutes: int
+    actual_minutes: int
+    started_at: datetime
+    finished_at: datetime
+    scheduled_for: Optional[datetime] = None
+    completion_notes: Optional[str] = None
+
+
+class ExecutionLogUpdate(BaseModel):
+    """Patch a completed-task time record — used by the Edit Time modal when
+    you forgot to hit Start or Done at the right moment."""
+
+    actual_minutes: Optional[int] = Field(None, ge=0, le=24 * 60)
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    completion_notes: Optional[str] = Field(None, max_length=2000)
+
+
+class TimingResponse(BaseModel):
+    """Everything the Edit Time modal needs to display the timing for one task:
+    the execution_log row (None for tasks that haven't been completed yet) and
+    every interruption recorded against that task."""
+
+    task_id: int
+    task_status: str
+    task_started_at: Optional[datetime] = None
+    execution_log: Optional[ExecutionLogOut] = None
+    interruptions: list[InterruptionOut] = Field(default_factory=list)
+
+
 class SubtaskOut(BaseModel):
     """One SOP-style checklist item under a task."""
 

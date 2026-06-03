@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.routers import (
     auth, briefing, gamification, ingest, now, oauth, presence, reports,
-    schedule, slack, subtasks, tasks, users,
+    schedule, slack, subtasks, tasks, timing, users,
 )
 from app.security import get_current_user
 from app.services import reminder_loop, scheduler_loop
@@ -62,6 +62,7 @@ app.include_router(briefing.router, dependencies=_auth)
 app.include_router(presence.router, dependencies=_auth)
 app.include_router(subtasks.router, dependencies=_auth)
 app.include_router(tasks.router, dependencies=_auth)
+app.include_router(timing.router, dependencies=_auth)
 
 
 @app.get("/health")

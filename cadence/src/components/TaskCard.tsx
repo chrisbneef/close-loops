@@ -31,11 +31,13 @@ function deadlineLabel(iso: string | null): string | null {
 }
 
 export function TaskCard({
-  task, ownerId, onEdit,
+  task, ownerId, onEdit, onEditTime,
 }: {
   task: TaskOut;
   ownerId: 1 | 2;
   onEdit?: (task: TaskOut) => void;
+  /** Only set on the dashboard for done tasks (lets you fix recorded time). */
+  onEditTime?: (task: TaskOut) => void;
 }) {
   const qc = useQueryClient();
   const [expanded, setExpanded] = useState(false);
@@ -82,6 +84,15 @@ export function TaskCard({
           <Text style={s.title} numberOfLines={2}>{task.title}</Text>
         </Pressable>
         <Text style={s.dur}>{formatDuration(task.est_minutes)}</Text>
+        {onEditTime && col === 'done' && (
+          <Pressable
+            onPress={() => onEditTime(task)}
+            hitSlop={6}
+            style={({ pressed }) => [s.editBtn, pressed && { opacity: 0.6 }]}
+          >
+            <Text style={s.editIcon}>⏱</Text>
+          </Pressable>
+        )}
         {onEdit && (
           <Pressable
             onPress={() => onEdit(task)}
