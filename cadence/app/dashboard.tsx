@@ -22,6 +22,7 @@ import { DateField } from '@/src/components/DateField';
 import { OwnerSwitcher } from '@/src/components/OwnerSwitcher';
 import { TaskCard } from '@/src/components/TaskCard';
 import { TimeEditModal } from '@/src/components/TimeEditModal';
+import { TodaySidebar } from '@/src/components/TodaySidebar';
 import { COLUMNS, columnFor, type ColumnKey } from '@/src/components/move-task';
 import {
   widgetColors as c, widgetRadii as r, widgetSpacing as sp, widgetType as t,
@@ -47,12 +48,6 @@ export default function DashboardScreen() {
     queryFn: () => api.listTasks(ownerId),
     refetchInterval: 30_000,
   });
-  const nextQuery = useQuery({
-    queryKey: ['next-action', ownerId],
-    queryFn: () => api.getNextAction(ownerId),
-    refetchInterval: 30_000,
-  });
-
   const tasks = tasksQuery.data ?? [];
 
   return (
@@ -113,21 +108,7 @@ export default function DashboardScreen() {
 
         {!narrow && (
           <View style={s.sidebar}>
-            <Text style={s.sidebarHeading}>TODAY</Text>
-            {nextQuery.data?.current ? (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                {[nextQuery.data.current, ...nextQuery.data.up_next].map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    ownerId={ownerId}
-                    onEdit={setEditingTask}
-                  />
-                ))}
-              </ScrollView>
-            ) : (
-              <Text style={s.muted}>Nothing scheduled right now.</Text>
-            )}
+            <TodaySidebar ownerId={ownerId} />
           </View>
         )}
       </View>

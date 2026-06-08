@@ -25,7 +25,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 from app.config import settings
-from app.services.calendar_provider import FreeSlot, StubCalendarProvider
+from app.services.calendar_provider import CalendarEvent, FreeSlot, StubCalendarProvider
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +109,34 @@ class GoogleCalendarProvider:
                 continue  # skip all-day events for now
             busy.append((datetime.fromisoformat(s), datetime.fromisoformat(e)))
         return _subtract_busy(skeleton, busy)
+
+    def events_for_window(
+        self, user_timezone: str, *, start: datetime, end: datetime,
+    ) -> list[CalendarEvent]:
+        """Return real meetings (non-Cadence events) in [start, end] sorted by
+        start time — used by the Day Plan timeline. All-day events are skipped
+        since they don't anchor focused work."""
+        try:
+            raw = self._list_events(_to_utc(start), _to_utc(end))
+        except Exception:
+            logger.exception("Google Calendar list failed; returning no events")
+            return []
+        out: list[CalendarEvent] = []
+        for ev in raw:
+            priv = (ev.get("extendedProperties") or {}).get("private", {})
+            if priv.get(CADENCE_BLOCK_PROPERTY) == "true":
+                continue  # our own block — already shown via calendar_blocks
+            s = ev.get("start", {}).get("dateTime")
+            e = ev.get("end", {}).get("dateTime")
+            if not s or not e:
+                continue  # skip all-day events
+            out.append(CalendarEvent(
+                start=datetime.fromisoformat(s),
+                end=datetime.fromisoformat(e),
+                title=ev.get("summary") or "(untitled meeting)",
+            ))
+        out.sort(key=lambda e: e.start)
+        return out
 
     def _list_events(self, start: datetime, end: datetime) -> list[dict]:
         service = self._get_service()

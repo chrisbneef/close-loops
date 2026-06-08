@@ -111,6 +111,23 @@ export interface PeriodReport {
   memo: string | null;
 }
 
+export interface DayPlanItem {
+  start: string;
+  end: string;
+  title: string;
+  type: 'meeting' | 'task';
+  task_id: number | null;
+  importance: number | null;
+  status: string | null;
+}
+
+export interface DayPlanResponse {
+  owner_id: number;
+  date: string;        // YYYY-MM-DD in owner's local timezone
+  items: DayPlanItem[];
+  has_started: boolean;
+}
+
 export interface ExecutionLogOut {
   id: number;
   task_id: number;
@@ -291,6 +308,16 @@ export const api = {
     return jsonRequest<PartnerPresence | null>(
       `/presence/partner?owner_id=${ownerId}`,
     );
+  },
+
+  // -- day plan --
+  getDayPlan(ownerId: number): Promise<DayPlanResponse> {
+    return jsonRequest<DayPlanResponse>(`/day-plan?owner_id=${ownerId}`);
+  },
+  startDay(ownerId: number): Promise<DayPlanResponse> {
+    return jsonRequest<DayPlanResponse>(`/day/start?owner_id=${ownerId}`, {
+      method: 'POST',
+    });
   },
 
   // -- edit time --

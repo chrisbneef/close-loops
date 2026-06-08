@@ -66,6 +66,9 @@ class User(Base):
     # Auth (Phase 8) — bcrypt hash. NULL for users who can't log in directly
     # (e.g. contractors who only receive delegated tasks).
     password_hash: Mapped[Optional[str]] = mapped_column(String(255))
+    # Last time the user clicked "Start Your Day" on the dashboard. The TODAY
+    # section uses this to roll over its CTA at the local day boundary.
+    day_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False

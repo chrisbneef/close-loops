@@ -190,6 +190,37 @@ class ExecutionLogUpdate(BaseModel):
     completion_notes: Optional[str] = Field(None, max_length=2000)
 
 
+class DayPlanItem(BaseModel):
+    """One entry on the Day Plan timeline — either a Google Calendar meeting
+    or a scheduled Cadence task. Sorted by `start` on the response."""
+
+    start: datetime
+    end: datetime
+    title: str
+    type: Literal["meeting", "task"]
+    task_id: Optional[int] = None
+    importance: Optional[int] = None
+    status: Optional[str] = None
+
+
+class DayPlanResponse(BaseModel):
+    owner_id: int
+    date: str   # YYYY-MM-DD in the owner's local timezone
+    items: list[DayPlanItem] = Field(default_factory=list)
+    has_started: bool = Field(
+        False,
+        description="True if the user has clicked Start Your Day for today's date.",
+    )
+
+
+class StartDayRequest(BaseModel):
+    """POST /day/start body — defaults are 'now' for start and 18:00 local for
+    end (workday cap). Caller may override either."""
+
+    start_at: Optional[datetime] = None
+    end_at: Optional[datetime] = None
+
+
 class TimingResponse(BaseModel):
     """Everything the Edit Time modal needs to display the timing for one task:
     the execution_log row (None for tasks that haven't been completed yet) and

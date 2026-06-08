@@ -27,6 +27,16 @@ class FreeSlot:
         return int((self.end - self.start).total_seconds() // 60)
 
 
+@dataclass(frozen=True)
+class CalendarEvent:
+    """An existing event on the user's calendar — used by the Day Plan
+    timeline to display meetings interleaved with Cadence tasks."""
+
+    start: datetime  # tz-aware UTC
+    end: datetime    # tz-aware UTC
+    title: str
+
+
 class CalendarProvider(Protocol):
     """Read free time + push generated blocks to the user's calendar.
 
@@ -35,6 +45,10 @@ class CalendarProvider(Protocol):
     talks to Google Calendar."""
 
     def free_slots(self, user_timezone: str, *, start: datetime, end: datetime) -> list[FreeSlot]: ...
+
+    def events_for_window(
+        self, user_timezone: str, *, start: datetime, end: datetime,
+    ) -> list[CalendarEvent]: ...
 
     def create_event(self, *, start: datetime, end: datetime, title: str, task_id: int) -> str: ...
     def update_event(self, *, event_id: str, start: datetime, end: datetime, title: str) -> None: ...
@@ -92,6 +106,12 @@ class StubCalendarProvider:
                         slots.append(FreeSlot(start=s_utc, end=e_utc))
             cursor += timedelta(days=1)
         return slots
+
+    def events_for_window(
+        self, user_timezone: str, *, start: datetime, end: datetime,
+    ) -> list[CalendarEvent]:
+        """Stub has no external calendar to read — no meetings to display."""
+        return []
 
     # No-op write methods so the Stub satisfies the CalendarProvider Protocol.
     # Tests and dev runs that don't have a Google connection get clean no-ops.
