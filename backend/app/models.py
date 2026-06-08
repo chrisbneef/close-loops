@@ -250,7 +250,9 @@ class Interruption(Base):
     __tablename__ = "interruptions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    # NULL for free-standing pauses logged via End-of-Day gap fill (lunch,
+    # school run, etc. — pauses that aren't anchored to a specific task).
+    task_id: Mapped[Optional[int]] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     paused_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     resumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

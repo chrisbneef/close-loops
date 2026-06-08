@@ -111,6 +111,31 @@ export interface PeriodReport {
   memo: string | null;
 }
 
+export interface DayTimelineEvent {
+  start: string;
+  end: string;
+  kind: 'task' | 'pause' | 'meeting';
+  title: string;
+  task_id: number | null;
+  interruption_id: number | null;
+  execution_log_id: number | null;
+}
+
+export interface DayTimelineGap {
+  start: string;
+  end: string;
+  duration_minutes: number;
+}
+
+export interface DayTimelineResponse {
+  owner_id: number;
+  date: string;
+  day_started_at: string | null;
+  day_ended_at: string | null;
+  events: DayTimelineEvent[];
+  gaps: DayTimelineGap[];
+}
+
 export interface DayPlanItem {
   start: string;
   end: string;
@@ -323,6 +348,21 @@ export const api = {
   endDay(ownerId: number): Promise<DayPlanResponse> {
     return jsonRequest<DayPlanResponse>(`/day/end?owner_id=${ownerId}`, {
       method: 'POST',
+    });
+  },
+  getDayTimeline(ownerId: number): Promise<DayTimelineResponse> {
+    return jsonRequest<DayTimelineResponse>(`/day/timeline?owner_id=${ownerId}`);
+  },
+  fillGap(body: {
+    owner_id: number;
+    start_at: string;
+    end_at: string;
+    kind: 'task' | 'pause';
+    label: string;
+  }): Promise<{ kind: string; task_id?: number; interruption_id?: number; execution_log_id?: number }> {
+    return jsonRequest(`/day/gaps/fill`, {
+      method: 'POST',
+      body: JSON.stringify(body),
     });
   },
 

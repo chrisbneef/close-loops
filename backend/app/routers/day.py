@@ -22,8 +22,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_session
-from app.models import CalendarBlock, Task, User
-from app.schemas import DayPlanItem, DayPlanResponse, StartDayRequest
+from app.models import CalendarBlock, ExecutionLog, Interruption, Task, User
+from app.schemas import (
+    DayPlanItem, DayPlanResponse, DayTimelineEvent, DayTimelineGap,
+    DayTimelineResponse, GapFillRequest, StartDayRequest,
+)
 from app.services import reschedule
 from app.services.scheduler import provider_for_user
 
@@ -36,6 +39,10 @@ router = APIRouter(tags=["day"])
 # split.
 DEFAULT_END_HOUR_LOCAL = 18
 WORKDAY_MAX_HOURS = 9
+
+# Sub-5-min gaps aren't worth surfacing — they're usually just clock skew
+# between events and the user would gloss over them anyway.
+MIN_GAP_MINUTES = 5
 
 
 def _owner_tz(owner: User) -> zoneinfo.ZoneInfo:
@@ -174,6 +181,192 @@ def start_day(
     # Re-read the owner so day_started_at is fresh after the commit.
     session.refresh(owner)
     return _build_day_plan(session, owner, now=now)
+
+
+def _gather_timeline_events(
+    session: Session, owner: User, *, day_start: datetime, day_end: datetime,
+) -> list[DayTimelineEvent]:
+    """All accounted-for stretches of time today: completed tasks, pauses,
+    Google meetings. Sorted by start time."""
+    events: list[DayTimelineEvent] = []
+
+    # Completed tasks (execution_log rows finished today).
+    log_rows = list(session.execute(
+        select(ExecutionLog, Task)
+        .join(Task, Task.id == ExecutionLog.task_id)
+        .where(
+            ExecutionLog.user_id == owner.id,
+            ExecutionLog.finished_at >= day_start,
+            ExecutionLog.finished_at <= day_end,
+        )
+    ).all())
+    for log, task in log_rows:
+        events.append(DayTimelineEvent(
+            start=_as_utc(log.started_at),
+            end=_as_utc(log.finished_at),
+            kind="task",
+            title=task.title,
+            task_id=task.id,
+            execution_log_id=log.id,
+        ))
+
+    # Pauses (both resolved and still-open).
+    intr_rows = list(session.execute(
+        select(Interruption)
+        .where(
+            Interruption.user_id == owner.id,
+            Interruption.paused_at >= day_start,
+            Interruption.paused_at <= day_end,
+            Interruption.resumed_at.is_not(None),  # only resolved for the timeline
+        )
+    ).scalars())
+    # Map task_id -> title for pauses anchored to a task (for the timeline label).
+    task_titles: dict[int, str] = {}
+    task_ids_needed = {i.task_id for i in intr_rows if i.task_id is not None}
+    if task_ids_needed:
+        for t in session.execute(
+            select(Task).where(Task.id.in_(task_ids_needed))
+        ).scalars():
+            task_titles[t.id] = t.title
+    for intr in intr_rows:
+        anchor = task_titles.get(intr.task_id, "") if intr.task_id else ""
+        label = intr.reason or "pause"
+        title = f"{label}" + (f" · {anchor}" if anchor else "")
+        events.append(DayTimelineEvent(
+            start=_as_utc(intr.paused_at),
+            end=_as_utc(intr.resumed_at),
+            kind="pause",
+            title=title,
+            task_id=intr.task_id,
+            interruption_id=intr.id,
+        ))
+
+    # Google Calendar meetings.
+    if owner.google_refresh_token:
+        provider = provider_for_user(owner)
+        try:
+            for ev in provider.events_for_window(
+                owner.timezone or "UTC", start=day_start, end=day_end,
+            ):
+                events.append(DayTimelineEvent(
+                    start=_as_utc(ev.start),
+                    end=_as_utc(ev.end),
+                    kind="meeting",
+                    title=ev.title,
+                ))
+        except Exception:
+            logger.exception("Failed to fetch meetings for timeline owner=%s", owner.id)
+
+    events.sort(key=lambda e: e.start)
+    return events
+
+
+def _detect_gaps(
+    events: list[DayTimelineEvent], *, window_start: datetime, window_end: datetime,
+) -> list[DayTimelineGap]:
+    """Walk the merged event timeline and emit any unaccounted stretches
+    between `window_start` and `window_end`, ignoring sub-MIN_GAP_MINUTES."""
+    out: list[DayTimelineGap] = []
+    cursor = window_start
+    for ev in events:
+        if ev.start > cursor:
+            mins = int((ev.start - cursor).total_seconds() // 60)
+            if mins >= MIN_GAP_MINUTES:
+                out.append(DayTimelineGap(start=cursor, end=ev.start, duration_minutes=mins))
+        if ev.end > cursor:
+            cursor = ev.end
+    if window_end > cursor:
+        mins = int((window_end - cursor).total_seconds() // 60)
+        if mins >= MIN_GAP_MINUTES:
+            out.append(DayTimelineGap(start=cursor, end=window_end, duration_minutes=mins))
+    return out
+
+
+@router.get("/day/timeline", response_model=DayTimelineResponse)
+def get_day_timeline(
+    owner_id: int = Query(...),
+    session: Session = Depends(get_session),
+) -> DayTimelineResponse:
+    owner = session.get(User, owner_id)
+    if owner is None:
+        raise HTTPException(status_code=404, detail=f"owner_id={owner_id} not found")
+
+    now = datetime.now(timezone.utc)
+    day_start, day_end, date_str = _local_day_bounds(owner, now=now)
+    events = _gather_timeline_events(session, owner, day_start=day_start, day_end=day_end)
+
+    # Detect gaps between day_started_at (or first event) and day_ended_at (or now).
+    window_start = (
+        _as_utc(owner.day_started_at)
+        if owner.day_started_at and _has_started_today(owner, now=now)
+        else (events[0].start if events else now)
+    )
+    window_end = (
+        _as_utc(owner.day_ended_at)
+        if owner.day_ended_at and _has_ended_today(owner, now=now)
+        else now
+    )
+    gaps = _detect_gaps(events, window_start=window_start, window_end=window_end)
+
+    return DayTimelineResponse(
+        owner_id=owner.id,
+        date=date_str,
+        day_started_at=_as_utc(owner.day_started_at) if _has_started_today(owner, now=now) else None,
+        day_ended_at=_as_utc(owner.day_ended_at) if _has_ended_today(owner, now=now) else None,
+        events=events,
+        gaps=gaps,
+    )
+
+
+@router.post("/day/gaps/fill", status_code=201)
+def fill_gap(
+    body: GapFillRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, int | str]:
+    """Label a gap as a retroactive task (Task + ExecutionLog) or pause
+    (free-standing Interruption with task_id=NULL)."""
+    owner = session.get(User, body.owner_id)
+    if owner is None:
+        raise HTTPException(status_code=404, detail=f"owner_id={body.owner_id} not found")
+    if body.end_at <= body.start_at:
+        raise HTTPException(status_code=422, detail="end_at must be after start_at")
+
+    duration_min = max(1, int((body.end_at - body.start_at).total_seconds() // 60))
+
+    if body.kind == "task":
+        task = Task(
+            title=body.label.strip(),
+            owner_id=owner.id,
+            est_minutes=duration_min,
+            status="done",
+            started_at=body.start_at,
+            finished_at=body.end_at,
+        )
+        session.add(task)
+        session.flush()
+        log = ExecutionLog(
+            task_id=task.id,
+            user_id=owner.id,
+            estimated_minutes=duration_min,
+            actual_minutes=duration_min,
+            started_at=body.start_at,
+            finished_at=body.end_at,
+        )
+        session.add(log)
+        session.commit()
+        return {"kind": "task", "task_id": task.id, "execution_log_id": log.id}
+
+    # kind == "pause" — free-standing pause not anchored to a task.
+    intr = Interruption(
+        task_id=None,
+        user_id=owner.id,
+        paused_at=body.start_at,
+        resumed_at=body.end_at,
+        reason=body.label.strip(),
+    )
+    session.add(intr)
+    session.commit()
+    return {"kind": "pause", "interruption_id": intr.id}
 
 
 @router.post("/day/end", response_model=DayPlanResponse)

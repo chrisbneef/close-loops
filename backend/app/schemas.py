@@ -148,7 +148,7 @@ class InterruptionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    task_id: int
+    task_id: Optional[int] = None   # NULL for free-standing gap-fill pauses
     user_id: int
     paused_at: datetime
     resumed_at: Optional[datetime] = None
@@ -225,6 +225,49 @@ class DayPlanResponse(BaseModel):
         False,
         description="True if the user has clicked End Your Day for today's date.",
     )
+
+
+class DayTimelineEvent(BaseModel):
+    """One stretch of time accounted for on a day's timeline — a completed
+    task, a pause, or a meeting. `kind` discriminates."""
+
+    start: datetime
+    end: datetime
+    kind: Literal["task", "pause", "meeting"]
+    title: str
+    task_id: Optional[int] = None       # task / pause (when anchored)
+    interruption_id: Optional[int] = None  # pause only
+    execution_log_id: Optional[int] = None  # task only
+
+
+class DayTimelineGap(BaseModel):
+    """A stretch of time between accounted events. Surfaced to the user so
+    they can label it as a retroactive task or pause."""
+
+    start: datetime
+    end: datetime
+    duration_minutes: int
+
+
+class DayTimelineResponse(BaseModel):
+    owner_id: int
+    date: str  # YYYY-MM-DD in owner's local tz
+    day_started_at: Optional[datetime] = None
+    day_ended_at: Optional[datetime] = None
+    events: list[DayTimelineEvent] = Field(default_factory=list)
+    gaps: list[DayTimelineGap] = Field(default_factory=list)
+
+
+class GapFillRequest(BaseModel):
+    """Body for POST /day/gaps/fill — label a gap as either a retroactive
+    task (creates a Task + ExecutionLog) or a pause (creates a free-standing
+    Interruption with no task_id)."""
+
+    owner_id: int
+    start_at: datetime
+    end_at: datetime
+    kind: Literal["task", "pause"]
+    label: str = Field(..., min_length=1, max_length=255)
 
 
 class StartDayRequest(BaseModel):

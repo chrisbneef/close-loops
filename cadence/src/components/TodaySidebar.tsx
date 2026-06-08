@@ -14,10 +14,12 @@
  * CTA back on automatically.
  */
 
+import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api, type DayPlanItem } from '@/src/api';
+import { DayReviewModal } from '@/src/components/DayReviewModal';
 import {
   widgetColors as c, widgetRadii as r, widgetSpacing as sp, widgetType as t,
 } from '@/src/widget-theme';
@@ -39,6 +41,7 @@ function fmtDuration(startIso: string, endIso: string): string {
 
 export function TodaySidebar({ ownerId }: { ownerId: 1 | 2 }) {
   const qc = useQueryClient();
+  const [reviewOpen, setReviewOpen] = useState(false);
   const plan = useQuery({
     queryKey: ['day-plan', ownerId],
     queryFn: () => api.getDayPlan(ownerId),
@@ -56,7 +59,12 @@ export function TodaySidebar({ ownerId }: { ownerId: 1 | 2 }) {
 
   const endDay = useMutation({
     mutationFn: () => api.endDay(ownerId),
-    onSuccess: (next) => qc.setQueryData(['day-plan', ownerId], next),
+    onSuccess: (next) => {
+      qc.setQueryData(['day-plan', ownerId], next);
+      qc.invalidateQueries({ queryKey: ['day-timeline', ownerId] });
+      // Auto-open the review modal so the user sees the calculation + any gaps.
+      setReviewOpen(true);
+    },
   });
 
   const data = plan.data;
@@ -134,21 +142,30 @@ export function TodaySidebar({ ownerId }: { ownerId: 1 | 2 }) {
             >
               <Text style={s.reanalyzeBtnText}>↻ RE-ANALYZE</Text>
             </Pressable>
-            <Pressable
-              onPress={() => endDay.mutate()}
-              disabled={endDay.isPending || data.has_ended}
-              style={({ pressed }) => [
-                s.endDayBtn,
-                data.has_ended && s.endDayBtnDone,
-                pressed && !data.has_ended && { opacity: 0.85 },
-              ]}
-            >
-              <Text style={[s.endDayBtnText, data.has_ended && { color: c.textFaint }]}>
-                {data.has_ended ? 'DAY ENDED' : 'END YOUR DAY'}
-              </Text>
-            </Pressable>
+            {data.has_ended ? (
+              <Pressable
+                onPress={() => setReviewOpen(true)}
+                style={({ pressed }) => [s.reviewBtn, pressed && { opacity: 0.85 }]}
+              >
+                <Text style={s.reviewBtnText}>REVIEW DAY</Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                onPress={() => endDay.mutate()}
+                disabled={endDay.isPending}
+                style={({ pressed }) => [
+                  s.endDayBtn, pressed && { opacity: 0.85 },
+                ]}
+              >
+                <Text style={s.endDayBtnText}>END YOUR DAY</Text>
+              </Pressable>
+            )}
           </View>
         </>
+      )}
+
+      {reviewOpen && (
+        <DayReviewModal ownerId={ownerId} onClose={() => setReviewOpen(false)} />
       )}
     </View>
   );
@@ -253,6 +270,16 @@ const s = StyleSheet.create({
   },
   endDayBtnDone: { borderColor: c.border, backgroundColor: c.bg },
   endDayBtnText: { ...t.duration, color: c.warning },
+  reviewBtn: {
+    flex: 1,
+    paddingVertical: sp.xs,
+    borderRadius: r.sm,
+    borderWidth: 1,
+    borderColor: c.accent,
+    backgroundColor: c.accent,
+    alignItems: 'center',
+  },
+  reviewBtnText: { ...t.duration, color: c.textOnAccent },
 
   muted: { ...t.taskMeta, color: c.textDim },
 });
