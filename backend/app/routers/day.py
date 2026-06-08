@@ -90,28 +90,34 @@ def _has_ended_today(owner: User, *, now: datetime) -> bool:
 def _build_day_plan(session: Session, owner: User, *, now: datetime) -> DayPlanResponse:
     day_start, day_end, date_str = _local_day_bounds(owner, now=now)
     items: list[DayPlanItem] = []
+    has_started = _has_started_today(owner, now=now)
 
-    # Cadence task blocks scheduled for today.
-    block_rows = list(session.execute(
-        select(CalendarBlock, Task)
-        .join(Task, Task.id == CalendarBlock.task_id)
-        .where(
-            Task.owner_id == owner.id,
-            CalendarBlock.start >= day_start,
-            CalendarBlock.start <= day_end,
-        )
-        .order_by(CalendarBlock.start.asc())
-    ).all())
-    for block, task in block_rows:
-        items.append(DayPlanItem(
-            start=_as_utc(block.start),
-            end=_as_utc(block.end),
-            title=task.title,
-            type="task",
-            task_id=task.id,
-            importance=task.importance,
-            status=task.status,
-        ))
+    # Cadence task blocks — only surface them once the user has actually
+    # clicked Start Your Day. Until then we show meetings only, so freshly-
+    # added tasks don't auto-populate the TODAY rail. The background
+    # scheduler still writes calendar_blocks behind the scenes; we just
+    # withhold them from the display until the day is anchored.
+    if has_started:
+        block_rows = list(session.execute(
+            select(CalendarBlock, Task)
+            .join(Task, Task.id == CalendarBlock.task_id)
+            .where(
+                Task.owner_id == owner.id,
+                CalendarBlock.start >= day_start,
+                CalendarBlock.start <= day_end,
+            )
+            .order_by(CalendarBlock.start.asc())
+        ).all())
+        for block, task in block_rows:
+            items.append(DayPlanItem(
+                start=_as_utc(block.start),
+                end=_as_utc(block.end),
+                title=task.title,
+                type="task",
+                task_id=task.id,
+                importance=task.importance,
+                status=task.status,
+            ))
 
     # Google Calendar meetings on the owner's connected calendar — only if
     # they've actually connected, otherwise skip cleanly.
@@ -136,7 +142,7 @@ def _build_day_plan(session: Session, owner: User, *, now: datetime) -> DayPlanR
         owner_id=owner.id,
         date=date_str,
         items=items,
-        has_started=_has_started_today(owner, now=now),
+        has_started=has_started,
         has_ended=_has_ended_today(owner, now=now),
     )
 

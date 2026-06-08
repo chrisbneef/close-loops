@@ -52,7 +52,7 @@ def test_day_plan_404_unknown_owner(client):
     assert c.get("/day-plan?owner_id=9999").status_code == 404
 
 
-def test_day_plan_returns_today_blocks_only(client):
+def test_day_plan_returns_today_blocks_only_after_start_day(client):
     c, SL = client
     now = datetime.now(timezone.utc).replace(microsecond=0)
     today_9 = now.replace(hour=9, minute=0, second=0)
@@ -62,6 +62,8 @@ def test_day_plan_returns_today_blocks_only(client):
         _make_task_with_block(s, title="today task", start=today_9, end=today_9 + timedelta(hours=1))
         _make_task_with_block(s, title="yesterday task", start=yesterday_9, end=yesterday_9 + timedelta(hours=1))
         _make_task_with_block(s, title="tomorrow task", start=tomorrow_9, end=tomorrow_9 + timedelta(hours=1))
+        # Anchor the day so task blocks are surfaced.
+        s.get(models.User, 1).day_started_at = now
         s.commit()
 
     body = c.get("/day-plan?owner_id=1").json()
@@ -69,6 +71,23 @@ def test_day_plan_returns_today_blocks_only(client):
     assert titles == ["today task"]
     assert body["items"][0]["type"] == "task"
     assert body["items"][0]["task_id"] is not None
+
+
+def test_day_plan_hides_task_blocks_until_start_day_clicked(client):
+    """Newly-added tasks land on calendar_blocks immediately (the background
+    scheduler does that), but they should NOT show on the TODAY rail until
+    the user clicks Start Your Day."""
+    c, SL = client
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    today_9 = now.replace(hour=9, minute=0, second=0)
+    with SL() as s:
+        _make_task_with_block(s, title="auto-scheduled by tick",
+                              start=today_9, end=today_9 + timedelta(hours=1))
+        s.commit()
+
+    body = c.get("/day-plan?owner_id=1").json()
+    assert body["items"] == [], "task blocks should be hidden when has_started=False"
+    assert body["has_started"] is False
 
 
 def test_day_plan_empty_when_no_blocks_today(client):
