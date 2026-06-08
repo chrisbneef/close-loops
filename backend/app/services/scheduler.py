@@ -30,7 +30,10 @@ def provider_for_user(user: User) -> CalendarProvider:
     return StubCalendarProvider()
 
 DEFAULT_HORIZON_DAYS = 14
-ACTIVE_STATUSES = ("pending", "scheduled", "in_progress")
+# Paused tasks count as active — they're work-in-progress the user stepped
+# away from, so Start Your Day should pack them back onto today's schedule
+# alongside fresh pending work.
+ACTIVE_STATUSES = ("pending", "scheduled", "in_progress", "paused")
 
 
 def _active_tasks(session: Session, owner_id: int) -> list[Task]:
