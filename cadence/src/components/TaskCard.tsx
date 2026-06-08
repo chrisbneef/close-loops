@@ -84,7 +84,7 @@ export function TaskCard({
           <Text style={s.title} numberOfLines={2}>{task.title}</Text>
         </Pressable>
         <Text style={s.dur}>{formatDuration(task.est_minutes)}</Text>
-        {onEditTime && col === 'done' && (
+        {onEditTime && (col === 'done' || col === 'in_progress' || col === 'paused') && (
           <Pressable
             onPress={() => onEditTime(task)}
             hitSlop={6}

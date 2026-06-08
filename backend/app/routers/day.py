@@ -72,6 +72,14 @@ def _has_started_today(owner: User, *, now: datetime) -> bool:
     return day_start <= started <= day_end
 
 
+def _has_ended_today(owner: User, *, now: datetime) -> bool:
+    if owner.day_ended_at is None:
+        return False
+    day_start, day_end, _ = _local_day_bounds(owner, now=now)
+    ended = _as_utc(owner.day_ended_at)
+    return day_start <= ended <= day_end
+
+
 def _build_day_plan(session: Session, owner: User, *, now: datetime) -> DayPlanResponse:
     day_start, day_end, date_str = _local_day_bounds(owner, now=now)
     items: list[DayPlanItem] = []
@@ -122,6 +130,7 @@ def _build_day_plan(session: Session, owner: User, *, now: datetime) -> DayPlanR
         date=date_str,
         items=items,
         has_started=_has_started_today(owner, now=now),
+        has_ended=_has_ended_today(owner, now=now),
     )
 
 
@@ -163,5 +172,23 @@ def start_day(
     reschedule.request_reschedule_for_owner(owner.id, reason="day/start")
 
     # Re-read the owner so day_started_at is fresh after the commit.
+    session.refresh(owner)
+    return _build_day_plan(session, owner, now=now)
+
+
+@router.post("/day/end", response_model=DayPlanResponse)
+def end_day(
+    owner_id: int = Query(...),
+    session: Session = Depends(get_session),
+) -> DayPlanResponse:
+    """Pin day_ended_at and return the day timeline so the user can review +
+    fill in gaps. Doesn't reschedule — the day is wrapping, not regenerating."""
+    owner = session.get(User, owner_id)
+    if owner is None:
+        raise HTTPException(status_code=404, detail=f"owner_id={owner_id} not found")
+
+    now = datetime.now(timezone.utc)
+    owner.day_ended_at = now
+    session.commit()
     session.refresh(owner)
     return _build_day_plan(session, owner, now=now)

@@ -164,6 +164,16 @@ class InterruptionUpdate(BaseModel):
     reason: Optional[str] = Field(None, min_length=1, max_length=500)
 
 
+class InterruptionCreate(BaseModel):
+    """Add a pause record retroactively — for when you took a break and
+    forgot to click Pause. `resumed_at` is optional; leave it off if the
+    pause is still open at the time of logging."""
+
+    paused_at: datetime
+    resumed_at: Optional[datetime] = None
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
 class ExecutionLogOut(BaseModel):
     """One completed-task run as recorded in execution_log."""
 
@@ -210,6 +220,10 @@ class DayPlanResponse(BaseModel):
     has_started: bool = Field(
         False,
         description="True if the user has clicked Start Your Day for today's date.",
+    )
+    has_ended: bool = Field(
+        False,
+        description="True if the user has clicked End Your Day for today's date.",
     )
 
 
@@ -292,6 +306,10 @@ class TaskUpdate(BaseModel):
     deadline: Optional[datetime] = None
     description: Optional[str] = Field(None, max_length=5000)
     owner_id: Optional[int] = Field(None, description="Reassign the task to a different cofounder.")
+    started_at: Optional[datetime] = Field(
+        None,
+        description="Backdate the task's start punch (for in-progress / paused tasks).",
+    )
     # Use the string "none" to clear an existing recurrence (Pydantic can't
     # distinguish JSON-null from "not provided", so we use a sentinel string).
     recurrence: Optional[Literal["daily", "weekly", "monthly", "none"]] = None

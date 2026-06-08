@@ -126,6 +126,7 @@ export interface DayPlanResponse {
   date: string;        // YYYY-MM-DD in owner's local timezone
   items: DayPlanItem[];
   has_started: boolean;
+  has_ended: boolean;
 }
 
 export interface ExecutionLogOut {
@@ -257,7 +258,7 @@ export const api = {
   // (in_progress/paused/done) must use start/pause/done — server 409s otherwise.
   patchTask(
     taskId: number,
-    fields: Partial<{ title: string; importance: number; est_minutes: number; deadline: string; description: string; owner_id: number; recurrence: 'daily' | 'weekly' | 'monthly' | 'none'; status: 'whiteboard' | 'pending' | 'scheduled' }>,
+    fields: Partial<{ title: string; importance: number; est_minutes: number; deadline: string; description: string; owner_id: number; recurrence: 'daily' | 'weekly' | 'monthly' | 'none'; started_at: string; status: 'whiteboard' | 'pending' | 'scheduled' }>,
   ): Promise<TaskOut> {
     return jsonRequest<TaskOut>(`/tasks/${taskId}`, {
       method: 'PATCH',
@@ -319,6 +320,11 @@ export const api = {
       method: 'POST',
     });
   },
+  endDay(ownerId: number): Promise<DayPlanResponse> {
+    return jsonRequest<DayPlanResponse>(`/day/end?owner_id=${ownerId}`, {
+      method: 'POST',
+    });
+  },
 
   // -- edit time --
   getTaskTiming(taskId: number): Promise<TimingResponse> {
@@ -340,6 +346,15 @@ export const api = {
     return jsonRequest<InterruptionOut>(`/interruptions/${intrId}`, {
       method: 'PATCH',
       body: JSON.stringify(fields),
+    });
+  },
+  addInterruption(
+    taskId: number,
+    body: { paused_at: string; resumed_at?: string; reason: string },
+  ): Promise<InterruptionOut> {
+    return jsonRequest<InterruptionOut>(`/tasks/${taskId}/interruptions`, {
+      method: 'POST',
+      body: JSON.stringify(body),
     });
   },
 

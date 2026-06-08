@@ -69,6 +69,9 @@ class User(Base):
     # Last time the user clicked "Start Your Day" on the dashboard. The TODAY
     # section uses this to roll over its CTA at the local day boundary.
     day_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    # Last time the user clicked "End Your Day". Used to bracket the day's
+    # timeline view + drive the gap-filling UI.
+    day_ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False

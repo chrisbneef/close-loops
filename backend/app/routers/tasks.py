@@ -154,6 +154,8 @@ def patch_task(
         task.deadline = body.deadline
     if body.description is not None:
         task.description = body.description
+    if body.started_at is not None:
+        task.started_at = body.started_at
     if body.recurrence is not None:
         # 'none' is the explicit "clear it" sentinel; daily/weekly/monthly set it.
         task.recurrence = None if body.recurrence == "none" else body.recurrence

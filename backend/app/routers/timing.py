@@ -25,8 +25,8 @@ from sqlalchemy.orm import Session
 from app.db import get_session
 from app.models import ExecutionLog, Interruption, Task
 from app.schemas import (
-    ExecutionLogOut, ExecutionLogUpdate, InterruptionOut, InterruptionUpdate,
-    TimingResponse,
+    ExecutionLogOut, ExecutionLogUpdate, InterruptionCreate, InterruptionOut,
+    InterruptionUpdate, TimingResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -100,6 +100,33 @@ def patch_execution_log(
     session.commit()
     session.refresh(log)
     return ExecutionLogOut.model_validate(log)
+
+
+@router.post("/tasks/{task_id}/interruptions", response_model=InterruptionOut, status_code=201)
+def add_interruption(
+    task_id: int,
+    body: InterruptionCreate,
+    session: Session = Depends(get_session),
+) -> InterruptionOut:
+    """Add a pause record manually — for "we went on break at 12:05 but didn't
+    hit Pause; punch us out retroactively." Either fully-resolved (with
+    resumed_at) or open-ended (resumed_at omitted)."""
+    task = session.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"task_id={task_id} not found")
+    if body.resumed_at is not None and body.resumed_at <= body.paused_at:
+        raise HTTPException(status_code=422, detail="resumed_at must be after paused_at")
+    intr = Interruption(
+        task_id=task.id,
+        user_id=task.owner_id,
+        paused_at=body.paused_at,
+        resumed_at=body.resumed_at,
+        reason=body.reason.strip(),
+    )
+    session.add(intr)
+    session.commit()
+    session.refresh(intr)
+    return InterruptionOut.model_validate(intr)
 
 
 @router.patch("/interruptions/{interruption_id}", response_model=InterruptionOut)

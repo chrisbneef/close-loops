@@ -54,6 +54,11 @@ export function TodaySidebar({ ownerId }: { ownerId: 1 | 2 }) {
     },
   });
 
+  const endDay = useMutation({
+    mutationFn: () => api.endDay(ownerId),
+    onSuccess: (next) => qc.setQueryData(['day-plan', ownerId], next),
+  });
+
   const data = plan.data;
 
   return (
@@ -122,12 +127,27 @@ export function TodaySidebar({ ownerId }: { ownerId: 1 | 2 }) {
           <ScrollView showsVerticalScrollIndicator={false} style={s.scroll}>
             <Timeline items={data.items} />
           </ScrollView>
-          <Pressable
-            onPress={() => startDay.mutate()}
-            style={({ pressed }) => [s.reanalyzeBtn, pressed && { opacity: 0.85 }]}
-          >
-            <Text style={s.reanalyzeBtnText}>↻ RE-ANALYZE</Text>
-          </Pressable>
+          <View style={s.dayActions}>
+            <Pressable
+              onPress={() => startDay.mutate()}
+              style={({ pressed }) => [s.reanalyzeBtn, pressed && { opacity: 0.85 }]}
+            >
+              <Text style={s.reanalyzeBtnText}>↻ RE-ANALYZE</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => endDay.mutate()}
+              disabled={endDay.isPending || data.has_ended}
+              style={({ pressed }) => [
+                s.endDayBtn,
+                data.has_ended && s.endDayBtnDone,
+                pressed && !data.has_ended && { opacity: 0.85 },
+              ]}
+            >
+              <Text style={[s.endDayBtnText, data.has_ended && { color: c.textFaint }]}>
+                {data.has_ended ? 'DAY ENDED' : 'END YOUR DAY'}
+              </Text>
+            </Pressable>
+          </View>
         </>
       )}
     </View>
@@ -213,8 +233,9 @@ const s = StyleSheet.create({
   titleMeeting: { color: c.textDim },
   typeTag: { ...t.taskMeta, color: c.textFaint, fontSize: 10 },
 
+  dayActions: { marginTop: sp.sm, flexDirection: 'row', gap: sp.xs },
   reanalyzeBtn: {
-    marginTop: sp.sm,
+    flex: 1,
     paddingVertical: sp.xs,
     borderRadius: r.sm,
     borderWidth: 1,
@@ -222,6 +243,16 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   reanalyzeBtnText: { ...t.duration, color: c.textDim },
+  endDayBtn: {
+    flex: 1,
+    paddingVertical: sp.xs,
+    borderRadius: r.sm,
+    borderWidth: 1,
+    borderColor: c.warning,
+    alignItems: 'center',
+  },
+  endDayBtnDone: { borderColor: c.border, backgroundColor: c.bg },
+  endDayBtnText: { ...t.duration, color: c.warning },
 
   muted: { ...t.taskMeta, color: c.textDim },
 });
