@@ -13,6 +13,7 @@ from app.services.google_calendar import (
     CADENCE_BLOCK_PROPERTY,
     GoogleCalendarProvider,
     _subtract_busy,
+    _user_attending,
 )
 from app.services.calendar_provider import FreeSlot
 
@@ -82,6 +83,99 @@ def test_free_slots_filters_out_cadence_blocks():
     # Cadence event at 18:00-19:00 also doesn't overlap.
     # Result: at least one slot starting at NOW=16:00 should remain.
     assert any(s.start == NOW for s in slots), f"expected a slot starting at {NOW}, got {slots}"
+
+
+def test_user_attending_no_attendees_is_attending():
+    """Personal blocks the user created for themselves have no attendees list."""
+    assert _user_attending({"summary": "focus"}) is True
+    assert _user_attending({"attendees": []}) is True
+
+
+def test_user_attending_accepted_and_tentative_are_attending():
+    for status in ("accepted", "tentative"):
+        ev = {"attendees": [{"self": True, "responseStatus": status}]}
+        assert _user_attending(ev) is True, status
+
+
+def test_user_attending_declined_and_needsaction_are_not_attending():
+    """The 'RE Showing' / 'white' Google event case — user hasn't accepted."""
+    for status in ("declined", "needsAction"):
+        ev = {"attendees": [{"self": True, "responseStatus": status}]}
+        assert _user_attending(ev) is False, status
+
+
+def test_user_attending_ignores_other_attendees_response():
+    """Other people's responses don't matter — only the calendar owner's does."""
+    ev = {"attendees": [
+        {"email": "someone@else.com", "responseStatus": "declined"},
+        {"self": True, "responseStatus": "accepted"},
+    ]}
+    assert _user_attending(ev) is True
+
+
+def test_user_attending_no_self_attendee_treated_as_attending():
+    """If somehow we're not in the attendees list at all, don't block work over it."""
+    ev = {"attendees": [{"email": "someone@else.com", "responseStatus": "accepted"}]}
+    assert _user_attending(ev) is True
+
+
+def test_free_slots_ignores_unanswered_invites():
+    """An unanswered ('needsAction') invite must not eat into free time —
+    this was the bug behind the user's Start-Your-Day overlap report.
+
+    Skeleton clipped to NOW=16:00 UTC gives the 16:00-17:00 afternoon sliver.
+    Put a fake "RE Showing" inside it — must NOT chop the slot."""
+    provider = GoogleCalendarProvider(refresh_token="fake")
+    meeting_start = NOW + timedelta(minutes=15)  # 16:15 UTC
+    meeting_end = NOW + timedelta(minutes=45)    # 16:45 UTC
+    unanswered = {
+        "summary": "RE Showing",
+        "start": {"dateTime": meeting_start.isoformat()},
+        "end": {"dateTime": meeting_end.isoformat()},
+        "attendees": [{"self": True, "responseStatus": "needsAction"}],
+    }
+    with patch.object(provider, "_get_service", return_value=_service_returning_events([unanswered])):
+        slots = provider.free_slots("UTC", start=NOW, end=NOW + timedelta(days=1))
+    # Middle of the meeting (16:30) must still be inside a free slot.
+    mid = NOW + timedelta(minutes=30)
+    assert any(s.start <= mid < s.end for s in slots), \
+        f"unanswered invite carved out {mid} — should not have. slots={slots}"
+
+
+def test_free_slots_still_blocks_accepted_meetings():
+    """Sanity: my new filter doesn't accidentally make accepted meetings free."""
+    provider = GoogleCalendarProvider(refresh_token="fake")
+    accepted = {
+        "summary": "Real meeting",
+        "start": {"dateTime": (NOW + timedelta(minutes=15)).isoformat()},
+        "end": {"dateTime": (NOW + timedelta(minutes=45)).isoformat()},
+        "attendees": [{"self": True, "responseStatus": "accepted"}],
+    }
+    with patch.object(provider, "_get_service", return_value=_service_returning_events([accepted])):
+        slots = provider.free_slots("UTC", start=NOW, end=NOW + timedelta(days=1))
+    mid = NOW + timedelta(minutes=30)
+    assert not any(s.start <= mid < s.end for s in slots), \
+        f"accepted meeting should have carved out {mid}, but didn't. slots={slots}"
+
+
+def test_events_for_window_hides_declined_meetings():
+    provider = GoogleCalendarProvider(refresh_token="fake")
+    declined = {
+        "summary": "Optional standup",
+        "start": {"dateTime": NOW.isoformat()},
+        "end": {"dateTime": (NOW + timedelta(hours=1)).isoformat()},
+        "attendees": [{"self": True, "responseStatus": "declined"}],
+    }
+    accepted = {
+        "summary": "Real meeting",
+        "start": {"dateTime": (NOW + timedelta(hours=2)).isoformat()},
+        "end": {"dateTime": (NOW + timedelta(hours=3)).isoformat()},
+        "attendees": [{"self": True, "responseStatus": "accepted"}],
+    }
+    with patch.object(provider, "_get_service", return_value=_service_returning_events([declined, accepted])):
+        events = provider.events_for_window("UTC", start=NOW, end=NOW + timedelta(days=1))
+    titles = [e.title for e in events]
+    assert titles == ["Real meeting"], titles
 
 
 def test_free_slots_skips_all_day_events():

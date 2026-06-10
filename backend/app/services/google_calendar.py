@@ -40,6 +40,32 @@ def _to_utc(dt: datetime) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
+# Google Calendar responseStatus values the user counts as "attending":
+# - accepted: explicit yes
+# - tentative: marked maybe, still treated as busy
+# Skipped (treated as free time + hidden from rail):
+# - declined: explicit no
+# - needsAction: no response (Google renders these as 'white' / uncolored —
+#   exactly the case the user flagged when an unaccepted "RE Showing"
+#   ate his 11:30 slot)
+_ATTENDING_RESPONSES = frozenset({"accepted", "tentative"})
+
+
+def _user_attending(event: dict) -> bool:
+    """Whether the calendar's owner has signaled attendance for this event.
+
+    Events with no attendees array — personal blocks the user created for
+    themselves — are always considered attending. Events the user organized
+    but didn't formally invite themselves to are also treated as attending."""
+    attendees = event.get("attendees")
+    if not attendees:
+        return True
+    for a in attendees:
+        if a.get("self") is True:
+            return a.get("responseStatus", "accepted") in _ATTENDING_RESPONSES
+    return True
+
+
 def _subtract_busy(
     slots: list[FreeSlot], busy: list[tuple[datetime, datetime]]
 ) -> list[FreeSlot]:
@@ -103,6 +129,8 @@ class GoogleCalendarProvider:
             priv = (ev.get("extendedProperties") or {}).get("private", {})
             if priv.get(CADENCE_BLOCK_PROPERTY) == "true":
                 continue  # our own previously-scheduled block — not a constraint
+            if not _user_attending(ev):
+                continue  # declined / no-response → don't block work time
             s = ev.get("start", {}).get("dateTime")
             e = ev.get("end", {}).get("dateTime")
             if not s or not e:
@@ -126,6 +154,8 @@ class GoogleCalendarProvider:
             priv = (ev.get("extendedProperties") or {}).get("private", {})
             if priv.get(CADENCE_BLOCK_PROPERTY) == "true":
                 continue  # our own block — already shown via calendar_blocks
+            if not _user_attending(ev):
+                continue  # hide declined / unanswered invites from TODAY rail
             s = ev.get("start", {}).get("dateTime")
             e = ev.get("end", {}).get("dateTime")
             if not s or not e:
